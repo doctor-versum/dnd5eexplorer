@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <title>D&D 5e API (mit IndexedDB)</title>
+  <meta charset="UTF-8">
+  <title>D&D 5e API Caching mit IndexedDB</title>
   <style>
     body {
       font-family: sans-serif;
@@ -12,102 +12,112 @@
       width: 100%;
       height: 20px;
     }
-    pre {
+    pre, .rendered-json {
+      max-height: 60vh;
+      overflow-y: auto;
       background: #f5f5f5;
       padding: 1em;
       border: 1px solid #ccc;
-      overflow-x: auto;
-    }
-    button {
-      margin: 0.2em 0;
-      padding: 0.5em;
-    }
-    .hidden {
-      display: none;
-    }
-    .back-button {
       margin-top: 1em;
     }
-    .divider {
-      margin: 1em 0;
-      border-top: 1px solid #aaa;
+    button {
+      margin-top: 1em;
+      padding: 0.5em 1em;
+      font-size: 1em;
+    }
+    #category-list button, #sub-category-list button {
+      display: block;
+      width: 100%;
+      text-align: left;
+    }
+    hr {
+      margin: 2em 0;
     }
     .content-info {
-      margin: 0.2em 1em;
-      padding: 0.2em;
-      border-left: 2px solid #ccc;
+      padding: 0.3em;
+      border: 1px solid #aaa;
+      margin: 0.3em;
+      background-color: #e6e6e6;
     }
-    .content-level-1, .content-level-2, .content-level-3, .content-level-4 {
+    .rendered-json .content-level-1,
+    .rendered-json .content-level-2,
+    .rendered-json .content-level-3,
+    .rendered-json .content-level-4 {
       margin-left: 1em;
-      border-left: 2px dashed #ccc;
+      border-left: 3px solid #ccc;
       padding-left: 0.5em;
-      margin-bottom: 0.5em;
+      margin-top: 0.5em;
     }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
 <script>eruda.init();</script>
 </head>
 <body>
-  <h1>D&D 5e API (mit Caching)</h1>
+  <h1>D&D 5e API: Kategorien + Details (mit IndexedDB Cache)</h1>
   <p id="status">Initialisiere...</p>
   <progress id="progress" value="0" max="100"></progress>
 
-  <div id="mainMenu" class="hidden"></div>
-  <div id="subMenu" class="hidden"></div>
-  <button id="backButton" class="back-button hidden">Zurück</button>
-  <div class="divider hidden" id="divider"></div>
-  <div id="dataContainer"></div>
+  <div id="category-list" style="display:none;"></div>
+  <div id="sub-category-list" style="display:none;"></div>
+  <button id="back-button" style="display:none;" onclick="goBack()">Zurück</button>
+
+  <hr style="display:none;" id="separator">
+  <div id="rendered-content" class="rendered-json" style="display:none;"></div>
+
+  <button onclick="refreshData()">Daten neu laden</button>
 
   <script>
     const baseUrl = "https://www.dnd5eapi.co";
-    const dbName = "dnd5e-db";
+    const dbName = "dnd5e-cache";
     const storeName = "categories";
+    let db = null;
+    let currentData = null;
+    let currentCategory = null;
+    let currentSubcategoryUrl = null;
     const statusEl = document.getElementById("status");
     const progressEl = document.getElementById("progress");
-    const mainMenu = document.getElementById("mainMenu");
-    const subMenu = document.getElementById("subMenu");
-    const dataContainer = document.getElementById("dataContainer");
-    const backButton = document.getElementById("backButton");
-    const divider = document.getElementById("divider");
 
-    let db;
-    let currentCategory = null;
-
-    function openDB() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(dbName, 1);
-    request.onupgradeneeded = e => {
-      db = e.target.result;
-      if (!db.objectStoreNames.contains(storeName)) {
-        db.createObjectStore(storeName);
-      }
-    };
-    request.onsuccess = e => {
-      db = e.target.result;
-      resolve(db);
-    };
-    request.onerror = e => reject(e);
-  });
-}
-
-    function saveToDB(key, value) {
+    async function openDB() {
       return new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, "readwrite");
-        const store = tx.objectStore(storeName);
-        store.put(value, key);
-        tx.oncomplete = () => resolve();
-        tx.onerror = e => reject(e);
+        const request = indexedDB.open(dbName, 1);
+        request.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(storeName)) {
+            db.createObjectStore(storeName);
+          }
+        };
+        request.onsuccess = (e) => {
+          db = e.target.result;
+          resolve();
+        };
+        request.onerror = (e) => reject(e.target.error);
       });
     }
 
-    function getFromDB(key) {
+    function saveToCache(data) {
       return new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, "readonly");
+        const tx = db.transaction([storeName], "readwrite");
         const store = tx.objectStore(storeName);
-        const request = store.get(key);
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = e => reject(e);
+        const request = store.put(data, "data");
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
       });
+    }
+
+    function getFromCache() {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction([storeName], "readonly");
+        const store = tx.objectStore(storeName);
+        const request = store.get("data");
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async function clearCache() {
+      const tx = db.transaction([storeName], "readwrite");
+      const store = tx.objectStore(storeName);
+      store.clear();
     }
 
     async function fetchJSON(url) {
@@ -115,168 +125,174 @@
       return res.json();
     }
 
-    async function fetchAndStoreData() {
-      const apiRoot = await fetchJSON(`${baseUrl}/api`);
-      const entries = Object.entries(apiRoot);
-      progressEl.max = entries.length;
-      let count = 0;
+    async function fetchEndpoints() {
+      const response = await fetch(`${baseUrl}/api`);
+      const json = await response.json();
+      return Object.entries(json);
+    }
 
-      for (const [name, endpoint] of entries) {
-        statusEl.textContent = `Lade Kategorie: ${name}`;
-        const categoryData = await fetchJSON(`${baseUrl}${endpoint}`);
-        const detailedData = {};
+    async function fetchAllData() {
+      const results = new Map();
+      const endpoints = await fetchEndpoints();
+      progressEl.max = endpoints.length;
+      let currentStep = 0;
 
+      for (const [categoryName, endpoint] of endpoints) {
+        const categoryUrl = `${baseUrl}${endpoint}`;
+        statusEl.textContent = `Lade Kategorie: ${categoryName}`;
+        const categoryData = await fetchJSON(categoryUrl);
+
+        const detailedResults = new Map();
         if (Array.isArray(categoryData.results)) {
           for (const item of categoryData.results) {
-            const detail = await fetchJSON(`${baseUrl}${item.url}`);
-            detailedData[item.url] = detail;
+            try {
+              const detailData = await fetchJSON(`${baseUrl}${item.url}`);
+              detailedResults.set(item.url, detailData);
+            } catch (err) {
+              console.warn("Fehler bei Detailabruf", item.url);
+            }
           }
         }
-
-        await saveToDB(name, {
-          name,
-          endpoint,
-          data: detailedData,
-          list: categoryData.results
+        results.set(categoryName, {
+          count: categoryData.count,
+          results: Object.fromEntries(detailedResults)
         });
-
-        count++;
-        progressEl.value = count;
+        progressEl.value = ++currentStep;
       }
 
-      statusEl.textContent = "Fertig!";
-      progressEl.classList.add("hidden");
-      loadMainMenu();
+      const data = Object.fromEntries(results);
+      await saveToCache(data);
+      statusEl.textContent = "Daten geladen.";
+      progressEl.style.display = "none";
+      currentData = data;
+      displayCategories();
     }
 
-    function loadMainMenu() {
-      statusEl.textContent = "Wähle eine Kategorie:";
-      mainMenu.classList.remove("hidden");
-      subMenu.classList.add("hidden");
-      dataContainer.innerHTML = "";
-      divider.classList.add("hidden");
-      backButton.classList.add("hidden");
-
-      const tx = db.transaction(storeName, "readonly");
-      const store = tx.objectStore(storeName);
-      const request = store.getAllKeys();
-
-      request.onsuccess = async () => {
-        const keys = request.result;
-        mainMenu.innerHTML = "";
-        for (const key of keys) {
-          const btn = document.createElement("button");
-          btn.textContent = key;
-          btn.onclick = () => showSubMenu(key);
-          mainMenu.appendChild(btn);
-        }
-      };
-    }
-
-    async function showSubMenu(category) {
-      currentCategory = category;
-      mainMenu.classList.add("hidden");
-      subMenu.classList.remove("hidden");
-      backButton.classList.remove("hidden");
-      divider.classList.add("hidden");
-      dataContainer.innerHTML = "";
-      statusEl.textContent = `Wähle aus ${category}`;
-
-      const entry = await getFromDB(category);
-      subMenu.innerHTML = "";
-      for (const item of entry.list) {
+    function displayCategories() {
+      const container = document.getElementById("category-list");
+      container.innerHTML = "";
+      for (const category of Object.keys(currentData)) {
         const btn = document.createElement("button");
-        btn.textContent = item.name || item.index;
-        btn.onclick = () => showData(entry.data[item.url]);
-        subMenu.appendChild(btn);
+        btn.textContent = category;
+        btn.onclick = () => showCategory(category);
+        container.appendChild(btn);
       }
-
-      backButton.onclick = () => loadMainMenu();
+      container.style.display = "block";
+      document.getElementById("sub-category-list").style.display = "none";
+      document.getElementById("rendered-content").style.display = "none";
+      document.getElementById("separator").style.display = "none";
+      document.getElementById("back-button").style.display = "inline-block";
     }
 
-    function showData(data) {
-      dataContainer.innerHTML = "";
-      divider.classList.remove("hidden");
-      renderJSON(data, dataContainer, 1);
+    function showCategory(category) {
+      currentCategory = category;
+      const subData = currentData[category]?.results;
+      const container = document.getElementById("sub-category-list");
+      container.innerHTML = "";
+
+      for (const [url, data] of Object.entries(subData)) {
+        const btn = document.createElement("button");
+        btn.textContent = data.name || data.index || url;
+        btn.onclick = () => showSubCategory(url, data);
+        container.appendChild(btn);
+      }
+
+      document.getElementById("category-list").style.display = "none";
+      container.style.display = "block";
+      document.getElementById("rendered-content").style.display = "none";
+      document.getElementById("separator").style.display = "none";
+    }
+
+    function showSubCategory(url, data) {
+      currentSubcategoryUrl = url;
+      const contentEl = document.getElementById("rendered-content");
+      contentEl.innerHTML = "";
+      renderJSON(data, contentEl, 1);
+
+      contentEl.style.display = "block";
+      document.getElementById("separator").style.display = "block";
     }
 
     function renderJSON(obj, parent, level) {
+      const wrapper = document.createElement("div");
+      wrapper.className = `content-level-${level}`;
+
       if (Array.isArray(obj)) {
-        obj.forEach(item => {
-          const div = document.createElement("div");
-          div.className = `content-level-${level}`;
-          renderJSON(item, div, level + 1);
-          parent.appendChild(div);
-        });
+        for (const item of obj) {
+          renderJSON(item, wrapper, level + 1);
+        }
       } else if (typeof obj === "object" && obj !== null) {
-        const container = document.createElement("div");
-        container.className = `content-level-${level}`;
         for (const [key, value] of Object.entries(obj)) {
-          if (key === "url" && typeof value === "string") {
+          if (key === "url" && typeof value === "string" && value.startsWith("/api/")) {
             const btn = document.createElement("button");
-            btn.textContent = `Gehe zu: ${value}`;
-            btn.onclick = async () => {
-              const path = value.split("/api/")[1];
-              if (path) {
-                const parts = path.split("/");
-                if (parts.length >= 2) {
-                  const cat = parts[0];
-                  const sub = parts[1];
-                  const data = await getFromDB(cat);
-                  if (data && data.data) {
-                    showSubMenu(cat);
-                    setTimeout(() => {
-                      showData(data.data[`/api/${cat}/${sub}`]);
-                    }, 100);
-                  }
-                }
-              }
-            };
-            container.appendChild(btn);
-          } else if (typeof value === "object") {
-            const sub = document.createElement("div");
-            sub.className = `content-level-${level}`;
+            btn.textContent = `Weiter zu ${value}`;
+            btn.onclick = () => navigateToURL(value);
+            wrapper.appendChild(btn);
+          } else if (typeof value === "object" && value !== null) {
+            const subWrapper = document.createElement("div");
             const label = document.createElement("div");
+            label.className = "content-info";
             label.textContent = key;
-            sub.appendChild(label);
-            renderJSON(value, sub, level + 1);
-            container.appendChild(sub);
+            subWrapper.appendChild(label);
+            renderJSON(value, subWrapper, level + 1);
+            wrapper.appendChild(subWrapper);
           } else {
             const info = document.createElement("div");
             info.className = "content-info";
             info.textContent = `${key}: ${value}`;
-            container.appendChild(info);
+            wrapper.appendChild(info);
           }
         }
-        parent.appendChild(container);
       } else {
         const info = document.createElement("div");
         info.className = "content-info";
         info.textContent = obj;
-        parent.appendChild(info);
+        wrapper.appendChild(info);
       }
+
+      parent.appendChild(wrapper);
     }
 
-    async function init() {
-      await openDB();
-      const keys = await new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, "readonly");
-        const store = tx.objectStore(storeName);
-        const request = store.getAllKeys();
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = e => reject(e);
-      });
+    function navigateToURL(url) {
+      const parts = url.split("/");
+      const idx = parts.indexOf("api");
+      const category = parts[idx + 1];
+      const subPath = "/" + parts.slice(idx + 1).join("/");
 
-      if (keys.length > 0) {
-        progressEl.classList.add("hidden");
-        statusEl.textContent = "Daten aus Cache geladen.";
-        loadMainMenu();
+      if (currentData[category] && currentData[category].results[subPath]) {
+        showCategory(category);
+        showSubCategory(subPath, currentData[category].results[subPath]);
       } else {
-        fetchAndStoreData();
+        alert("Eintrag nicht im Cache gefunden: " + subPath);
       }
     }
 
-    init();
+    function goBack() {
+      displayCategories();
+    }
+
+    async function refreshData() {
+      const confirmed = confirm("Daten wirklich neu laden?");
+      if (confirmed) {
+        await clearCache();
+        location.reload();
+      }
+    }
+
+    openDB().then(async () => {
+      const cached = await getFromCache();
+      if (cached) {
+        currentData = cached;
+        statusEl.textContent = "Daten aus Cache geladen.";
+        progressEl.style.display = "none";
+        displayCategories();
+      } else {
+        await fetchAllData();
+      }
+    }).catch(err => {
+      console.error("Fehler:", err);
+      statusEl.textContent = "Fehler beim Laden.";
+    });
   </script>
 </body>
 </html>
