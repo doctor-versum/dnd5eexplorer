@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title>D&D 5e API Caching (IndexedDB)</title>
+  <title>D&D 5e API Caching mit IndexedDB</title>
   <style>
     body {
       font-family: sans-serif;
@@ -21,6 +21,13 @@
     }
     button {
       margin-top: 1em;
+      padding: 0.5em 1em;
+      font-size: 1em;
+    }
+    #category-list button {
+      display: block;
+      width: 100%;
+      text-align: left;
     }
   </style>
 </head>
@@ -28,62 +35,75 @@
   <h1>D&D 5e API: Kategorien + Details (mit IndexedDB Cache)</h1>
   <p id="status">Initialisiere...</p>
   <progress id="progress" value="0" max="100"></progress>
+
+  <div id="category-list" style="display:none;"></div>
+  <button id="back-button" style="display:none;" onclick="goBack()">Zurück</button>
+
   <pre id="output">Warte auf Start...</pre>
   <button onclick="refreshData()">Daten neu laden</button>
 
   <script>
     const baseUrl = "https://www.dnd5eapi.co";
-    const dbName = "DnD5eDB";
-    const storeName = "cache";
-    let db;
-
+    const dbName = "dnd5e-cache";
+    const storeName = "categories";
     const statusEl = document.getElementById("status");
     const progressEl = document.getElementById("progress");
     const outputEl = document.getElementById("output");
+    let db = null;
+    let currentData = null;
 
-    // IndexedDB öffnen
     function openDB() {
       return new Promise((resolve, reject) => {
         const request = indexedDB.open(dbName, 1);
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => {
-          db = request.result;
-          resolve(db);
+
+        request.onupgradeneeded = function (event) {
+          const db = event.target.result;
+          if (!db.objectStoreNames.contains(storeName)) {
+            db.createObjectStore(storeName);
+          }
         };
-        request.onupgradeneeded = () => {
-          const db = request.result;
-          db.createObjectStore(storeName);
+
+        request.onsuccess = function (event) {
+          db = event.target.result;
+          resolve();
+        };
+
+        request.onerror = function (event) {
+          reject(event.target.error);
         };
       });
     }
 
     function saveToCache(data) {
       return new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, "readwrite");
+        const tx = db.transaction([storeName], "readwrite");
         const store = tx.objectStore(storeName);
-        const req = store.put(data, "dnd5e-data");
-        req.onsuccess = () => resolve();
-        req.onerror = () => reject(req.error);
+        const request = store.put(data, "data");
+
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
       });
     }
 
     function getFromCache() {
       return new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, "readonly");
+        const tx = db.transaction([storeName], "readonly");
         const store = tx.objectStore(storeName);
-        const req = store.get("dnd5e-data");
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
+        const request = store.get("data");
+
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
       });
     }
 
     function clearCache() {
       return new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, "readwrite");
+        const tx = db.transaction([storeName], "readwrite");
         const store = tx.objectStore(storeName);
-        const req = store.delete("dnd5e-data");
-        req.onsuccess = () => resolve();
-        req.onerror = () => reject(req.error);
+        const request = store.clear();
+
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
       });
     }
 
@@ -139,15 +159,52 @@
       const finalData = Object.fromEntries(results);
       await saveToCache(finalData);
       statusEl.textContent = "Fertig! Aus dem Netz geladen.";
-      outputEl.textContent = JSON.stringify(finalData, null, 2);
+      progressEl.style.display = "none";
+      outputEl.textContent = "";
+      currentData = finalData;
+      displayCategories(finalData);
+    }
+
+    function displayCategories(data) {
+      const categoryList = document.getElementById("category-list");
+      categoryList.innerHTML = "";
+
+      for (const [key, value] of Object.entries(data)) {
+        const button = document.createElement("button");
+        button.textContent = `${key} (${value.count})`;
+        button.onclick = () => showCategory(key);
+        categoryList.appendChild(button);
+      }
+
+      categoryList.style.display = "block";
+    }
+
+    function showCategory(categoryName) {
+      const category = currentData[categoryName];
+      if (!category) return;
+
+      document.getElementById("category-list").style.display = "none";
+      document.getElementById("back-button").style.display = "inline-block";
+      document.getElementById("output").textContent = JSON.stringify(category, null, 2);
+      statusEl.textContent = `Kategorie: ${categoryName}`;
+    }
+
+    function goBack() {
+      document.getElementById("category-list").style.display = "block";
+      document.getElementById("back-button").style.display = "none";
+      document.getElementById("output").textContent = "";
+      statusEl.textContent = "Wähle eine Kategorie aus:";
     }
 
     async function loadFromCache() {
       const cached = await getFromCache();
       if (cached) {
         statusEl.textContent = "Daten aus Cache geladen.";
+        progressEl.style.display = "none";
         progressEl.value = progressEl.max;
-        outputEl.textContent = JSON.stringify(cached, null, 2);
+        outputEl.textContent = "";
+        currentData = cached;
+        displayCategories(cached);
         return true;
       }
       return false;
@@ -161,7 +218,6 @@
       }
     }
 
-    // Initialisierung
     openDB().then(async () => {
       if (!(await loadFromCache())) {
         await fetchAllData();
