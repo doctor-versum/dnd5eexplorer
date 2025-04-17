@@ -254,19 +254,18 @@
     }
 
     function navigateToURL(url) {
-  // Entferne /api/2014/ oder /api/ am Anfang
-  const fixedUrl = url.replace(/^\/api\/(?:\d{4}\/)?/, "/");
-
+  const fixedUrl = url; // einfach so lassen, wie es übergeben wird
   const parts = fixedUrl.split("/");
-  const category = parts[1]; // Erster Teil nach dem Slash
-  const subPath = "/" + parts.slice(1).join("/"); // Rekonstruiere den vollständigen Pfad ab der Kategorie
+  const category = parts[3]; // z.B. "skills" aus /api/2014/skills/animal-handling
+  const subPath = parts.slice(3).join("/"); // z.B. skills/animal-handling
 
-  if (currentData[category] && currentData[category].results[subPath]) {
+  if (currentData[category] && currentData[category].results["/api/2014/" + subPath]) {
     showCategory(category);
-    showSubCategory(subPath, currentData[category].results[subPath]);
+    showSubCategory("/api/2014/" + subPath, currentData[category].results["/api/2014/" + subPath]);
   } else {
-    alert("Eintrag nicht im Cache gefunden: " + subPath);
+    alert("Eintrag nicht im Cache gefunden: /api/2014/" + subPath);
     console.log("Gesuchte Kategorie:", category);
+    console.log("Gesuchte URL:", "/api/2014/" + subPath);
     console.log("Verfügbare Keys:", Object.keys(currentData[category]?.results || {}));
   }
 }
