@@ -40,7 +40,7 @@
   <div id="sub-category-list" style="display:none;"></div>
   <button id="back-button" style="display:none;" onclick="goBack()">Zurück</button>
 
-  <pre id="output">Warte auf Start...</pre>
+  <pre id="output" style="display:none;">Warte auf Start...</pre>
   <button onclick="refreshData()">Daten neu laden</button>
 
   <script>
@@ -52,28 +52,24 @@
     const outputEl = document.getElementById("output");
     let db = null;
     let currentData = null;
-    let categoryNames = {}; // Speichert die Kategorienamen für die Anzeige
+    let categoryNames = {};
     let currentCategory = null;
+    let previousView = "main";
 
     function openDB() {
       return new Promise((resolve, reject) => {
         const request = indexedDB.open(dbName, 1);
-
-        request.onupgradeneeded = function (event) {
-          const db = event.target.result;
+        request.onupgradeneeded = (e) => {
+          const db = e.target.result;
           if (!db.objectStoreNames.contains(storeName)) {
             db.createObjectStore(storeName);
           }
         };
-
-        request.onsuccess = function (event) {
-          db = event.target.result;
+        request.onsuccess = (e) => {
+          db = e.target.result;
           resolve();
         };
-
-        request.onerror = function (event) {
-          reject(event.target.error);
-        };
+        request.onerror = (e) => reject(e.target.error);
       });
     }
 
@@ -82,7 +78,6 @@
         const tx = db.transaction([storeName], "readwrite");
         const store = tx.objectStore(storeName);
         const request = store.put(data, "data");
-
         request.onsuccess = () => resolve();
         request.onerror = () => reject(request.error);
       });
@@ -93,7 +88,6 @@
         const tx = db.transaction([storeName], "readonly");
         const store = tx.objectStore(storeName);
         const request = store.get("data");
-
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });
@@ -104,7 +98,6 @@
         const tx = db.transaction([storeName], "readwrite");
         const store = tx.objectStore(storeName);
         const request = store.clear();
-
         request.onsuccess = () => resolve();
         request.onerror = () => reject(request.error);
       });
@@ -118,7 +111,7 @@
     async function fetchEndpoints() {
       const response = await fetch(`${baseUrl}/api`);
       const json = await response.json();
-      return Object.entries(json); // Gibt [KategorieName, URL] zurück
+      return Object.entries(json);
     }
 
     async function fetchAllData() {
@@ -133,7 +126,7 @@
       for (const [categoryName, endpoint] of endpoints) {
         const categoryUrl = `${baseUrl}${endpoint}`;
         statusEl.textContent = `Lade Kategorie: ${categoryName}`;
-        categoryNames[categoryName] = categoryName; // Speichert den Kategorienamen
+        categoryNames[categoryName] = categoryName;
         const categoryData = await fetchJSON(categoryUrl);
 
         const detailedResults = new Map();
@@ -156,8 +149,7 @@
           results: Object.fromEntries(detailedResults)
         });
 
-        currentStep++;
-        progressEl.value = currentStep;
+        progressEl.value = ++currentStep;
       }
 
       const finalData = Object.fromEntries(results);
@@ -165,6 +157,7 @@
       statusEl.textContent = "Fertig! Aus dem Netz geladen.";
       progressEl.style.display = "none";
       outputEl.textContent = "";
+      outputEl.style.display = "none";
       currentData = finalData;
       displayCategories(finalData);
     }
@@ -175,26 +168,32 @@
 
       for (const categoryName of Object.keys(data)) {
         const button = document.createElement("button");
-        button.textContent = categoryNames[categoryName] || categoryName; // Anzeigen des Kategorienamens
+        button.textContent = categoryNames[categoryName] || categoryName;
         button.onclick = () => showCategory(categoryName);
         categoryList.appendChild(button);
       }
 
       categoryList.style.display = "block";
+      document.getElementById("sub-category-list").style.display = "none";
+      outputEl.style.display = "none";
+      document.getElementById("back-button").style.display = "none";
     }
 
     function displaySubCategories(categoryName, subCategories) {
       const subCategoryList = document.getElementById("sub-category-list");
       subCategoryList.innerHTML = "";
 
-      for (const [subCategoryName, subCategoryData] of Object.entries(subCategories)) {
+      for (const [subCategoryUrl, subCategoryData] of Object.entries(subCategories)) {
         const button = document.createElement("button");
-        button.textContent = subCategoryName; // Anzeigen des Unterkategorienamens
-        button.onclick = () => showSubCategory(subCategoryName, subCategoryData);
+        button.textContent = subCategoryData.name || subCategoryData.index || subCategoryUrl;
+        button.onclick = () => showSubCategory(subCategoryUrl, subCategoryData);
         subCategoryList.appendChild(button);
       }
 
       subCategoryList.style.display = "block";
+      document.getElementById("back-button").style.display = "inline-block";
+      outputEl.style.display = "none";
+      previousView = "category";
     }
 
     function showCategory(categoryName) {
@@ -203,31 +202,29 @@
       if (!category) return;
 
       document.getElementById("category-list").style.display = "none";
-      document.getElementById("back-button").style.display = "inline-block";
-      outputEl.textContent = JSON.stringify(category, null, 2);
+      outputEl.style.display = "none";
+      statusEl.textContent = `Kategorie: ${categoryName}`;
 
-      // Falls die Kategorie Unterkategorien enthält, zeigen wir diese an
       const subCategories = category.results;
       if (subCategories) {
         displaySubCategories(categoryName, subCategories);
       }
-
-      statusEl.textContent = `Kategorie: ${categoryName}`;
     }
 
     function showSubCategory(subCategoryName, subCategoryData) {
-      document.getElementById("sub-category-list").style.display = "none";
+      previousView = "subcategory";
       outputEl.textContent = JSON.stringify(subCategoryData, null, 2);
-      statusEl.textContent = `Unterkategorie: ${subCategoryName}`;
+      outputEl.style.display = "block";
+      statusEl.textContent = `Unterkategorie: ${subCategoryData.name || subCategoryName}`;
     }
 
     function goBack() {
-      if (currentCategory) {
-        document.getElementById("category-list").style.display = "block";
-        document.getElementById("back-button").style.display = "none";
-        document.getElementById("sub-category-list").style.display = "none";
-        outputEl.textContent = "";
-        statusEl.textContent = "Wähle eine Kategorie aus:";
+      if (previousView === "subcategory") {
+        showCategory(currentCategory);
+        previousView = "category";
+      } else {
+        displayCategories(currentData);
+        previousView = "main";
       }
     }
 
@@ -238,6 +235,7 @@
         progressEl.style.display = "none";
         progressEl.value = progressEl.max;
         outputEl.textContent = "";
+        outputEl.style.display = "none";
         currentData = cached;
         displayCategories(cached);
         return true;
