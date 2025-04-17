@@ -4,66 +4,83 @@
   <meta charset="UTF-8">
   <title>D&D 5e API Caching mit IndexedDB</title>
   <style>
-    body {
-      font-family: sans-serif;
-      padding: 1em;
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background-color: #121212;
+      color: #f0f0f0;
+      font-family: 'Segoe UI', sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
     }
+
+    #loading-container {
+      text-align: center;
+    }
+
+    #loading-text {
+      font-size: 2em;
+      margin-bottom: 1em;
+      position: relative;
+    }
+
+    #loading-text::after {
+      content: "...";
+      display: inline-block;
+      animation: dots 1.5s steps(3, end) infinite;
+    }
+
+    @keyframes dots {
+      0% { content: ""; }
+      33% { content: "."; }
+      66% { content: ".."; }
+      100% { content: "..."; }
+    }
+
     progress {
-      width: 100%;
+      width: 300px;
       height: 20px;
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 1em;
     }
-    pre, .rendered-json {
-      max-height: 60vh;
-      overflow-y: auto;
-      background: #f5f5f5;
-      padding: 1em;
-      border: 1px solid #ccc;
-      margin-top: 1em;
+
+    progress::-webkit-progress-bar {
+      background-color: #444;
     }
-    button {
-      margin-top: 1em;
-      padding: 0.5em 1em;
+
+    progress::-webkit-progress-value {
+      background-color: #00aaff;
+    }
+
+    #status {
       font-size: 1em;
+      color: #ccc;
     }
-    #category-list button, #sub-category-list button {
-      display: block;
-      width: 100%;
-      text-align: left;
-    }
-    hr {
-      margin: 2em 0;
-    }
-    .content-info {
-      padding: 0.3em;
-      border: 1px solid #aaa;
-      margin: 0.3em;
-      background-color: #e6e6e6;
-    }
-    .rendered-json .content-level-1,
-    .rendered-json .content-level-2,
-    .rendered-json .content-level-3,
-    .rendered-json .content-level-4 {
-      margin-left: 1em;
-      border-left: 3px solid #ccc;
-      padding-left: 0.5em;
-      margin-top: 0.5em;
+
+    /* Versteckte UI-Elemente */
+    #category-list, #sub-category-list, #back-button, #separator, #rendered-content, h1, button {
+      display: none;
     }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
-<script>eruda.init();</script>
+  <script>eruda.init();</script>
 </head>
 <body>
-  <h1>D&D 5e API: Kategorien + Details (mit IndexedDB Cache)</h1>
-  <p id="status">Initialisiere...</p>
-  <progress id="progress" value="0" max="100"></progress>
+  <div id="loading-container">
+    <div id="loading-text">Loading</div>
+    <progress id="progress" value="0" max="100"></progress>
+    <div id="status">Initialisiere...</div>
+  </div>
 
-  <div id="category-list" style="display:none;"></div>
-  <div id="sub-category-list" style="display:none;"></div>
-  <button id="back-button" style="display:none;" onclick="goBack()">Zurück</button>
-
-  <hr style="display:none;" id="separator">
-  <div id="rendered-content" class="rendered-json" style="display:none;"></div>
-
+  <div id="category-list"></div>
+  <div id="sub-category-list"></div>
+  <button id="back-button" onclick="goBack()">Zurück</button>
+  <hr id="separator">
+  <div id="rendered-content" class="rendered-json"></div>
   <button onclick="refreshData()">Daten neu laden</button>
 
   <script>
@@ -139,24 +156,29 @@
 
       for (const [categoryName, endpoint] of endpoints) {
         const categoryUrl = `${baseUrl}${endpoint}`;
-        statusEl.textContent = `Lade Kategorie: ${categoryName}`;
         const categoryData = await fetchJSON(categoryUrl);
 
         const detailedResults = new Map();
         if (Array.isArray(categoryData.results)) {
+          let itemIndex = 1;
+          const itemCount = categoryData.results.length;
           for (const item of categoryData.results) {
+            statusEl.textContent = `Loading ${item.name || item.index} from ${categoryName} (${itemIndex}/${itemCount})`;
             try {
               const detailData = await fetchJSON(`${baseUrl}${item.url}`);
               detailedResults.set(item.url, detailData);
             } catch (err) {
               console.warn("Fehler bei Detailabruf", item.url);
             }
+            itemIndex++;
           }
         }
+
         results.set(categoryName, {
           count: categoryData.count,
           results: Object.fromEntries(detailedResults)
         });
+
         progressEl.value = ++currentStep;
       }
 
@@ -164,6 +186,7 @@
       await saveToCache(data);
       statusEl.textContent = "Daten geladen.";
       progressEl.style.display = "none";
+      document.getElementById("loading-container").style.display = "none";
       currentData = data;
       displayCategories();
     }
@@ -174,6 +197,7 @@
       for (const category of Object.keys(currentData)) {
         const btn = document.createElement("button");
         btn.textContent = category;
+        btn.style.display = "block";
         btn.onclick = () => showCategory(category);
         container.appendChild(btn);
       }
@@ -224,16 +248,14 @@
       } else if (typeof obj === "object" && obj !== null) {
         for (const [key, value] of Object.entries(obj)) {
           if (key === "url" && typeof value === "string") {
-  const button = document.createElement("button");
-  const parts = value.split("/");
-  const category = parts[3] || "???";
-  const element = parts[parts.length - 1] || "???";
-  button.textContent = `Gehe zu ${element} (${category})`;
-  button.addEventListener("click", () => {
-    navigateToURL(value);
-  });
-  wrapper.appendChild(button); // <-- nicht "content", sondern "container"
-} else if (typeof value === "object" && value !== null) {
+            const button = document.createElement("button");
+            const parts = value.split("/");
+            const category = parts[3] || "???";
+            const element = parts[parts.length - 1] || "???";
+            button.textContent = `Gehe zu ${element} (${category})`;
+            button.addEventListener("click", () => navigateToURL(value));
+            wrapper.appendChild(button);
+          } else if (typeof value === "object" && value !== null) {
             const subWrapper = document.createElement("div");
             const label = document.createElement("div");
             label.className = "content-info";
@@ -259,21 +281,18 @@
     }
 
     function navigateToURL(url) {
-  const fixedUrl = url; // einfach so lassen, wie es übergeben wird
-  const parts = fixedUrl.split("/");
-  const category = parts[3]; // z.B. "skills" aus /api/2014/skills/animal-handling
-  const subPath = parts.slice(3).join("/"); // z.B. skills/animal-handling
+      const fixedUrl = url;
+      const parts = fixedUrl.split("/");
+      const category = parts[3];
+      const subPath = parts.slice(3).join("/");
 
-  if (currentData[category] && currentData[category].results["/api/2014/" + subPath]) {
-    showCategory(category);
-    showSubCategory("/api/2014/" + subPath, currentData[category].results["/api/2014/" + subPath]);
-  } else {
-    alert("Eintrag nicht im Cache gefunden: /api/2014/" + subPath);
-    console.log("Gesuchte Kategorie:", category);
-    console.log("Gesuchte URL:", "/api/2014/" + subPath);
-    console.log("Verfügbare Keys:", Object.keys(currentData[category]?.results || {}));
-  }
-}
+      if (currentData[category] && currentData[category].results["/api/2014/" + subPath]) {
+        showCategory(category);
+        showSubCategory("/api/2014/" + subPath, currentData[category].results["/api/2014/" + subPath]);
+      } else {
+        alert("Eintrag nicht im Cache gefunden: /api/2014/" + subPath);
+      }
+    }
 
     function goBack() {
       displayCategories();
@@ -293,6 +312,7 @@
         currentData = cached;
         statusEl.textContent = "Daten aus Cache geladen.";
         progressEl.style.display = "none";
+        document.getElementById("loading-container").style.display = "none";
         displayCategories();
       } else {
         await fetchAllData();
