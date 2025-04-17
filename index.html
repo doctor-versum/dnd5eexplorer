@@ -2,117 +2,104 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title style="display:none;">D&D 5e API Caching mit IndexedDB</title>
+  <title>D&D 5e API Caching mit IndexedDB</title>
   <style>
     html, body {
       margin: 0;
       padding: 0;
       height: 100%;
       font-family: sans-serif;
-    }
-
-    body {
       display: flex;
       flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background-color: #f2f2f2;
+    }
+
+    h1 {
+      display: none;
     }
 
     #loading-container {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
       text-align: center;
-      padding: 2em;
       position: relative;
+      top: -10%;
     }
 
     #loading-text {
-      font-size: 2em;
+      font-size: 1.5em;
       font-weight: bold;
-      margin-bottom: 1em;
     }
 
-    #loading-text::after {
+    #dots::after {
       content: '';
       display: inline-block;
-      width: 1ch;
+      width: 1em;
+      text-align: left;
       animation: dots 1.5s steps(3, end) infinite;
-      vertical-align: bottom;
     }
 
     @keyframes dots {
-      0%   { content: ''; }
-      33%  { content: '.'; }
-      66%  { content: '..'; }
+      0% { content: ''; }
+      33% { content: '.'; }
+      66% { content: '..'; }
       100% { content: '...'; }
     }
 
     progress {
-      width: 100%;
-      max-width: 600px;
+      width: 80%;
       height: 20px;
+      margin-top: 1em;
     }
 
     #status {
-      margin-top: 1em;
+      margin-top: 0.5em;
       font-size: 1em;
-      color: #333;
     }
 
-    #loading-hint {
+    #cache-info {
+      position: absolute;
+      bottom: 10px;
       text-align: center;
       font-size: 0.9em;
-      color: #888;
-      position: fixed;
-      bottom: 1em;
-      left: 0;
-      right: 0;
+      color: #555;
     }
 
-    #main-content {
-      padding: 1em;
-      display: flex;
-      flex-direction: column;
-      gap: 1em;
+    #category-list button,
+    #sub-category-list button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 0.5em 1em;
+      margin: 0.2em 0;
+      border: 1px solid #ccc;
+      background-color: #fff;
+      border-radius: 4px;
+      cursor: pointer;
     }
 
     #category-list,
     #sub-category-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5em;
+      width: 90%;
+      max-width: 600px;
+      margin-top: 1em;
     }
 
-    button {
-      padding: 0.5em 1em;
-      font-size: 1em;
-      cursor: pointer;
-    }
-
-    #back-button {
-      display: none;
-      margin-bottom: 1em;
-    }
-
-    #separator {
-      display: none;
-      margin: 1em 0;
-    }
-
-    #rendered-content {
-      display: none;
+    .rendered-json {
       max-height: 60vh;
       overflow-y: auto;
       background: #f5f5f5;
       padding: 1em;
       border: 1px solid #ccc;
+      margin-top: 1em;
+      width: 90%;
+      max-width: 800px;
     }
 
     .content-info {
       padding: 0.3em;
       border: 1px solid #aaa;
-      margin: 0.3em;
+      margin: 0.3em 0;
       background-color: #e6e6e6;
     }
 
@@ -125,27 +112,34 @@
       padding-left: 0.5em;
       margin-top: 0.5em;
     }
+
+    button {
+      margin-top: 1em;
+      padding: 0.5em 1em;
+      font-size: 1em;
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
   <script>eruda.init();</script>
 </head>
 <body>
   <div id="loading-container">
-    <div id="loading-text">Loading</div>
+    <div id="loading-text">Loading<span id="dots"></span></div>
     <progress id="progress" value="0" max="100"></progress>
     <div id="status">Initialisiere...</div>
   </div>
-  <div id="loading-hint">
-    This process will only have to be finished once, until you specifically clear the cache.
-  </div>
 
-  <div id="main-content" style="display: none;">
-    <div id="category-list"></div>
-    <div id="sub-category-list"></div>
-    <button id="back-button" onclick="goBack()">Zurück</button>
-    <hr id="separator">
-    <div id="rendered-content" class="rendered-json"></div>
-    <button onclick="refreshData()">Daten neu laden</button>
+  <div id="category-list" style="display:none;"></div>
+  <div id="sub-category-list" style="display:none;"></div>
+  <button id="back-button" style="display:none;" onclick="goBack()">Zurück</button>
+
+  <hr style="display:none;" id="separator">
+  <div id="rendered-content" class="rendered-json" style="display:none;"></div>
+
+  <button onclick="refreshData()" style="margin-bottom: 3em;">Daten neu laden</button>
+
+  <div id="cache-info">
+    This process will only have to be finished once, until you specifically clear the cache.
   </div>
 
   <script>
@@ -222,15 +216,17 @@
       for (const [categoryName, endpoint] of endpoints) {
         const categoryUrl = `${baseUrl}${endpoint}`;
         const categoryData = await fetchJSON(categoryUrl);
-
         const detailedResults = new Map();
+
         if (Array.isArray(categoryData.results)) {
-          for (let i = 0; i < categoryData.results.length; i++) {
-            const item = categoryData.results[i];
+          const total = categoryData.results.length;
+          let index = 1;
+
+          for (const item of categoryData.results) {
             try {
               const detailData = await fetchJSON(`${baseUrl}${item.url}`);
               detailedResults.set(item.url, detailData);
-              statusEl.textContent = `Loading ${detailData.name || item.index} from ${categoryName} (${i + 1}/${categoryData.results.length})`;
+              statusEl.textContent = `Loading ${item.name || item.index} from ${categoryName} (${index++}/${total})`;
             } catch (err) {
               console.warn("Fehler bei Detailabruf", item.url);
             }
@@ -241,17 +237,16 @@
           count: categoryData.count,
           results: Object.fromEntries(detailedResults)
         });
-
         progressEl.value = ++currentStep;
       }
 
       const data = Object.fromEntries(results);
       await saveToCache(data);
+      statusEl.textContent = "Daten geladen.";
+      progressEl.style.display = "none";
       currentData = data;
-      displayCategories();
       document.getElementById("loading-container").style.display = "none";
-      document.getElementById("loading-hint").style.display = "none";
-      document.getElementById("main-content").style.display = "block";
+      displayCategories();
     }
 
     function displayCategories() {
@@ -263,11 +258,11 @@
         btn.onclick = () => showCategory(category);
         container.appendChild(btn);
       }
-      container.style.display = "flex";
+      container.style.display = "block";
       document.getElementById("sub-category-list").style.display = "none";
       document.getElementById("rendered-content").style.display = "none";
       document.getElementById("separator").style.display = "none";
-      document.getElementById("back-button").style.display = "none";
+      document.getElementById("back-button").style.display = "inline-block";
     }
 
     function showCategory(category) {
@@ -284,10 +279,9 @@
       }
 
       document.getElementById("category-list").style.display = "none";
-      container.style.display = "flex";
+      container.style.display = "block";
       document.getElementById("rendered-content").style.display = "none";
       document.getElementById("separator").style.display = "none";
-      document.getElementById("back-button").style.display = "inline-block";
     }
 
     function showSubCategory(url, data) {
@@ -295,6 +289,7 @@
       const contentEl = document.getElementById("rendered-content");
       contentEl.innerHTML = "";
       renderJSON(data, contentEl, 1);
+
       contentEl.style.display = "block";
       document.getElementById("separator").style.display = "block";
     }
@@ -315,7 +310,9 @@
             const category = parts[3] || "???";
             const element = parts[parts.length - 1] || "???";
             button.textContent = `Gehe zu ${element} (${category})`;
-            button.addEventListener("click", () => navigateToURL(value));
+            button.addEventListener("click", () => {
+              navigateToURL(value);
+            });
             wrapper.appendChild(button);
           } else if (typeof value === "object" && value !== null) {
             const subWrapper = document.createElement("div");
@@ -375,10 +372,10 @@
       const cached = await getFromCache();
       if (cached) {
         currentData = cached;
-        displayCategories();
+        statusEl.textContent = "Daten aus Cache geladen.";
+        progressEl.style.display = "none";
         document.getElementById("loading-container").style.display = "none";
-        document.getElementById("loading-hint").style.display = "none";
-        document.getElementById("main-content").style.display = "block";
+        displayCategories();
       } else {
         await fetchAllData();
       }
