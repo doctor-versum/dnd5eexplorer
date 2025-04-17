@@ -223,11 +223,16 @@
         }
       } else if (typeof obj === "object" && obj !== null) {
         for (const [key, value] of Object.entries(obj)) {
-          if (key === "url" && typeof value === "string" && value.startsWith("/api/")) {
-            const btn = document.createElement("button");
-            btn.textContent = `Weiter zu ${value}`;
-            btn.onclick = () => navigateToURL(value);
-            wrapper.appendChild(btn);
+          if (key === "url" && typeof value === "string") {
+            const button = document.createElement("button");
+            const parts = value.split("/");
+            const category = parts[3] || "???";
+            const element = parts[parts.length - 1] || "???";
+            button.textContent = `Gehe zu ${element} (${category})`;
+            button.addEventListener("click", () => {
+              navigateToURL(value);
+            });
+            content.appendChild(button);
           } else if (typeof value === "object" && value !== null) {
             const subWrapper = document.createElement("div");
             const label = document.createElement("div");
