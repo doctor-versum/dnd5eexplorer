@@ -257,7 +257,7 @@
       const parts = url.split("/");
       const idx = parts.indexOf("api");
       const category = parts[idx + 2];
-      const subPath = "/" + parts.slice(idx + 1).join("/");
+      const subPath = "/" + parts.slice(idx + 2).join("/");
 
       if (currentData[category] && currentData[category].results[subPath]) {
         showCategory(category);
