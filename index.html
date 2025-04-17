@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title>D&D API Tiefenanalyse</title>
+  <title>D&D 5e API Caching</title>
   <style>
     body {
       font-family: sans-serif;
@@ -19,17 +19,21 @@
       padding: 1em;
       border: 1px solid #ccc;
     }
+    button {
+      margin-top: 1em;
+    }
   </style>
 </head>
 <body>
-  <h1>D&D 5e API: Kategorien + Details</h1>
+  <h1>D&D 5e API: Kategorien + Details (mit Cache)</h1>
   <p id="status">Initialisiere...</p>
   <progress id="progress" value="0" max="100"></progress>
   <pre id="output">Warte auf Start...</pre>
+  <button onclick="refreshData()">Daten neu laden</button>
 
   <script>
     const baseUrl = "https://www.dnd5eapi.co";
-    const results = new Map();
+    const storageKey = "dnd5e-cached-data";
     const statusEl = document.getElementById("status");
     const progressEl = document.getElementById("progress");
     const outputEl = document.getElementById("output");
@@ -46,52 +50,73 @@
     }
 
     async function fetchAllData() {
-      try {
-        const endpoints = await fetchEndpoints();
-        const totalSteps = endpoints.length; // Kategorie-Ladevorgänge zählen
-        let currentStep = 0;
+      const results = new Map();
 
-        progressEl.max = totalSteps;
-        progressEl.value = 0;
+      const endpoints = await fetchEndpoints();
+      const totalSteps = endpoints.length;
+      let currentStep = 0;
 
-        for (const endpoint of endpoints) {
-          const categoryUrl = `${baseUrl}${endpoint}`;
-          statusEl.textContent = `Lade Kategorie: ${endpoint}`;
-          const categoryData = await fetchJSON(categoryUrl);
+      progressEl.max = totalSteps;
+      progressEl.value = 0;
 
-          const detailedResults = new Map();
+      for (const endpoint of endpoints) {
+        const categoryUrl = `${baseUrl}${endpoint}`;
+        statusEl.textContent = `Lade Kategorie: ${endpoint}`;
+        const categoryData = await fetchJSON(categoryUrl);
 
-          if (Array.isArray(categoryData.results)) {
-            let subIndex = 0;
-            for (const item of categoryData.results) {
-              statusEl.textContent = `Lade Detail (${++subIndex}/${categoryData.results.length}) aus ${endpoint}: ${item.name || item.index || item.url}`;
-              try {
-                const detailData = await fetchJSON(`${baseUrl}${item.url}`);
-                detailedResults.set(item.url, detailData);
-              } catch (err) {
-                console.warn(`Fehler bei Detailabruf: ${item.url}`, err);
-              }
+        const detailedResults = new Map();
+
+        if (Array.isArray(categoryData.results)) {
+          let subIndex = 0;
+          for (const item of categoryData.results) {
+            statusEl.textContent = `Lade Detail (${++subIndex}/${categoryData.results.length}) aus ${endpoint}: ${item.name || item.index || item.url}`;
+            try {
+              const detailData = await fetchJSON(`${baseUrl}${item.url}`);
+              detailedResults.set(item.url, detailData);
+            } catch (err) {
+              console.warn(`Fehler bei Detailabruf: ${item.url}`, err);
             }
           }
-
-          results.set(endpoint, {
-            count: categoryData.count || 0,
-            results: Object.fromEntries(detailedResults)
-          });
-
-          currentStep++;
-          progressEl.value = currentStep;
         }
 
-        statusEl.textContent = "Fertig!";
-        outputEl.textContent = JSON.stringify(Object.fromEntries(results), null, 2);
-      } catch (err) {
-        statusEl.textContent = "Fehler beim Laden der Daten.";
-        console.error(err);
+        results.set(endpoint, {
+          count: categoryData.count || 0,
+          results: Object.fromEntries(detailedResults)
+        });
+
+        currentStep++;
+        progressEl.value = currentStep;
+      }
+
+      const finalData = Object.fromEntries(results);
+      localStorage.setItem(storageKey, JSON.stringify(finalData));
+      statusEl.textContent = "Fertig! Aus dem Netz geladen.";
+      outputEl.textContent = JSON.stringify(finalData, null, 2);
+    }
+
+    function loadFromCache() {
+      const cached = localStorage.getItem(storageKey);
+      if (cached) {
+        statusEl.textContent = "Daten aus Cache geladen.";
+        progressEl.value = progressEl.max;
+        outputEl.textContent = cached;
+        return true;
+      }
+      return false;
+    }
+
+    function refreshData() {
+      const confirmed = confirm("Willst du die zwischengespeicherten Daten wirklich löschen und neu laden?");
+      if (confirmed) {
+        localStorage.removeItem(storageKey);
+        location.reload();
       }
     }
 
-    fetchAllData();
+    // Start
+    if (!loadFromCache()) {
+      fetchAllData();
+    }
   </script>
 </body>
 </html>
