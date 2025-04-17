@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <title>D&D 5e API Caching mit IndexedDB</title>
+  <meta charset="UTF-8" />
+  <title>D&D 5e API (mit IndexedDB)</title>
   <style>
     body {
       font-family: sans-serif;
@@ -13,93 +13,98 @@
       height: 20px;
     }
     pre {
-      max-height: 60vh;
-      overflow-y: auto;
       background: #f5f5f5;
       padding: 1em;
       border: 1px solid #ccc;
+      overflow-x: auto;
     }
     button {
-      margin-top: 1em;
-      padding: 0.5em 1em;
-      font-size: 1em;
+      margin: 0.2em 0;
+      padding: 0.5em;
     }
-    #category-list button, #sub-category-list button {
-      display: block;
-      width: 100%;
-      text-align: left;
+    .hidden {
+      display: none;
+    }
+    .back-button {
+      margin-top: 1em;
+    }
+    .divider {
+      margin: 1em 0;
+      border-top: 1px solid #aaa;
+    }
+    .content-info {
+      margin: 0.2em 1em;
+      padding: 0.2em;
+      border-left: 2px solid #ccc;
+    }
+    .content-level-1, .content-level-2, .content-level-3, .content-level-4 {
+      margin-left: 1em;
+      border-left: 2px dashed #ccc;
+      padding-left: 0.5em;
+      margin-bottom: 0.5em;
     }
   </style>
 </head>
 <body>
-  <h1>D&D 5e API: Kategorien + Details (mit IndexedDB Cache)</h1>
+  <h1>D&D 5e API (mit Caching)</h1>
   <p id="status">Initialisiere...</p>
   <progress id="progress" value="0" max="100"></progress>
 
-  <div id="category-list" style="display:none;"></div>
-  <div id="sub-category-list" style="display:none;"></div>
-  <button id="back-button" style="display:none;" onclick="goBack()">Zurück</button>
-
-  <pre id="output" style="display:none;">Warte auf Start...</pre>
-  <button onclick="refreshData()">Daten neu laden</button>
+  <div id="mainMenu" class="hidden"></div>
+  <div id="subMenu" class="hidden"></div>
+  <button id="backButton" class="back-button hidden">Zurück</button>
+  <div class="divider hidden" id="divider"></div>
+  <div id="dataContainer"></div>
 
   <script>
     const baseUrl = "https://www.dnd5eapi.co";
-    const dbName = "dnd5e-cache";
+    const dbName = "dnd5e-db";
     const storeName = "categories";
     const statusEl = document.getElementById("status");
     const progressEl = document.getElementById("progress");
-    const outputEl = document.getElementById("output");
-    let db = null;
-    let currentData = null;
-    let categoryNames = {};
+    const mainMenu = document.getElementById("mainMenu");
+    const subMenu = document.getElementById("subMenu");
+    const dataContainer = document.getElementById("dataContainer");
+    const backButton = document.getElementById("backButton");
+    const divider = document.getElementById("divider");
+
+    let db;
     let currentCategory = null;
-    let previousView = "main";
 
     function openDB() {
       return new Promise((resolve, reject) => {
         const request = indexedDB.open(dbName, 1);
-        request.onupgradeneeded = (e) => {
-          const db = e.target.result;
+        request.onupgradeneeded = e => {
+          db = e.target.result;
           if (!db.objectStoreNames.contains(storeName)) {
             db.createObjectStore(storeName);
           }
         };
-        request.onsuccess = (e) => {
+        request.onsuccess = e => {
           db = e.target.result;
-          resolve();
+          resolve(db);
         };
-        request.onerror = (e) => reject(e.target.error);
+        request.onerror = e => reject(e);
       });
     }
 
-    function saveToCache(data) {
+    function saveToDB(key, value) {
       return new Promise((resolve, reject) => {
-        const tx = db.transaction([storeName], "readwrite");
+        const tx = db.transaction(storeName, "readwrite");
         const store = tx.objectStore(storeName);
-        const request = store.put(data, "data");
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
+        store.put(value, key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = e => reject(e);
       });
     }
 
-    function getFromCache() {
+    function getFromDB(key) {
       return new Promise((resolve, reject) => {
-        const tx = db.transaction([storeName], "readonly");
+        const tx = db.transaction(storeName, "readonly");
         const store = tx.objectStore(storeName);
-        const request = store.get("data");
+        const request = store.get(key);
         request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-      });
-    }
-
-    function clearCache() {
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction([storeName], "readwrite");
-        const store = tx.objectStore(storeName);
-        const request = store.clear();
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
+        request.onerror = e => reject(e);
       });
     }
 
@@ -108,157 +113,168 @@
       return res.json();
     }
 
-    async function fetchEndpoints() {
-      const response = await fetch(`${baseUrl}/api`);
-      const json = await response.json();
-      return Object.entries(json);
-    }
+    async function fetchAndStoreData() {
+      const apiRoot = await fetchJSON(`${baseUrl}/api`);
+      const entries = Object.entries(apiRoot);
+      progressEl.max = entries.length;
+      let count = 0;
 
-    async function fetchAllData() {
-      const results = new Map();
-      const endpoints = await fetchEndpoints();
-      const totalSteps = endpoints.length;
-      let currentStep = 0;
-
-      progressEl.max = totalSteps;
-      progressEl.value = 0;
-
-      for (const [categoryName, endpoint] of endpoints) {
-        const categoryUrl = `${baseUrl}${endpoint}`;
-        statusEl.textContent = `Lade Kategorie: ${categoryName}`;
-        categoryNames[categoryName] = categoryName;
-        const categoryData = await fetchJSON(categoryUrl);
-
-        const detailedResults = new Map();
+      for (const [name, endpoint] of entries) {
+        statusEl.textContent = `Lade Kategorie: ${name}`;
+        const categoryData = await fetchJSON(`${baseUrl}${endpoint}`);
+        const detailedData = {};
 
         if (Array.isArray(categoryData.results)) {
-          let subIndex = 0;
           for (const item of categoryData.results) {
-            statusEl.textContent = `Lade Detail (${++subIndex}/${categoryData.results.length}) aus ${categoryName}: ${item.name || item.index || item.url}`;
-            try {
-              const detailData = await fetchJSON(`${baseUrl}${item.url}`);
-              detailedResults.set(item.url, detailData);
-            } catch (err) {
-              console.warn(`Fehler bei Detailabruf: ${item.url}`, err);
-            }
+            const detail = await fetchJSON(`${baseUrl}${item.url}`);
+            detailedData[item.url] = detail;
           }
         }
 
-        results.set(categoryName, {
-          count: categoryData.count || 0,
-          results: Object.fromEntries(detailedResults)
+        await saveToDB(name, {
+          name,
+          endpoint,
+          data: detailedData,
+          list: categoryData.results
         });
 
-        progressEl.value = ++currentStep;
+        count++;
+        progressEl.value = count;
       }
 
-      const finalData = Object.fromEntries(results);
-      await saveToCache(finalData);
-      statusEl.textContent = "Fertig! Aus dem Netz geladen.";
-      progressEl.style.display = "none";
-      outputEl.textContent = "";
-      outputEl.style.display = "none";
-      currentData = finalData;
-      displayCategories(finalData);
+      statusEl.textContent = "Fertig!";
+      progressEl.classList.add("hidden");
+      loadMainMenu();
     }
 
-    function displayCategories(data) {
-      const categoryList = document.getElementById("category-list");
-      categoryList.innerHTML = "";
+    function loadMainMenu() {
+      statusEl.textContent = "Wähle eine Kategorie:";
+      mainMenu.classList.remove("hidden");
+      subMenu.classList.add("hidden");
+      dataContainer.innerHTML = "";
+      divider.classList.add("hidden");
+      backButton.classList.add("hidden");
 
-      for (const categoryName of Object.keys(data)) {
-        const button = document.createElement("button");
-        button.textContent = categoryNames[categoryName] || categoryName;
-        button.onclick = () => showCategory(categoryName);
-        categoryList.appendChild(button);
+      const tx = db.transaction(storeName, "readonly");
+      const store = tx.objectStore(storeName);
+      const request = store.getAllKeys();
+
+      request.onsuccess = async () => {
+        const keys = request.result;
+        mainMenu.innerHTML = "";
+        for (const key of keys) {
+          const btn = document.createElement("button");
+          btn.textContent = key;
+          btn.onclick = () => showSubMenu(key);
+          mainMenu.appendChild(btn);
+        }
+      };
+    }
+
+    async function showSubMenu(category) {
+      currentCategory = category;
+      mainMenu.classList.add("hidden");
+      subMenu.classList.remove("hidden");
+      backButton.classList.remove("hidden");
+      divider.classList.add("hidden");
+      dataContainer.innerHTML = "";
+      statusEl.textContent = `Wähle aus ${category}`;
+
+      const entry = await getFromDB(category);
+      subMenu.innerHTML = "";
+      for (const item of entry.list) {
+        const btn = document.createElement("button");
+        btn.textContent = item.name || item.index;
+        btn.onclick = () => showData(entry.data[item.url]);
+        subMenu.appendChild(btn);
       }
 
-      categoryList.style.display = "block";
-      document.getElementById("sub-category-list").style.display = "none";
-      outputEl.style.display = "none";
-      document.getElementById("back-button").style.display = "none";
+      backButton.onclick = () => loadMainMenu();
     }
 
-    function displaySubCategories(categoryName, subCategories) {
-      const subCategoryList = document.getElementById("sub-category-list");
-      subCategoryList.innerHTML = "";
-
-      for (const [subCategoryUrl, subCategoryData] of Object.entries(subCategories)) {
-        const button = document.createElement("button");
-        button.textContent = subCategoryData.name || subCategoryData.index || subCategoryUrl;
-        button.onclick = () => showSubCategory(subCategoryUrl, subCategoryData);
-        subCategoryList.appendChild(button);
-      }
-
-      subCategoryList.style.display = "block";
-      document.getElementById("back-button").style.display = "inline-block";
-      outputEl.style.display = "none";
-      previousView = "category";
+    function showData(data) {
+      dataContainer.innerHTML = "";
+      divider.classList.remove("hidden");
+      renderJSON(data, dataContainer, 1);
     }
 
-    function showCategory(categoryName) {
-      currentCategory = categoryName;
-      const category = currentData[categoryName];
-      if (!category) return;
-
-      document.getElementById("category-list").style.display = "none";
-      outputEl.style.display = "none";
-      statusEl.textContent = `Kategorie: ${categoryName}`;
-
-      const subCategories = category.results;
-      if (subCategories) {
-        displaySubCategories(categoryName, subCategories);
-      }
-    }
-
-    function showSubCategory(subCategoryName, subCategoryData) {
-      previousView = "subcategory";
-      outputEl.textContent = JSON.stringify(subCategoryData, null, 2);
-      outputEl.style.display = "block";
-      statusEl.textContent = `Unterkategorie: ${subCategoryData.name || subCategoryName}`;
-    }
-
-    function goBack() {
-      if (previousView === "subcategory") {
-        showCategory(currentCategory);
-        previousView = "category";
+    function renderJSON(obj, parent, level) {
+      if (Array.isArray(obj)) {
+        obj.forEach(item => {
+          const div = document.createElement("div");
+          div.className = `content-level-${level}`;
+          renderJSON(item, div, level + 1);
+          parent.appendChild(div);
+        });
+      } else if (typeof obj === "object" && obj !== null) {
+        const container = document.createElement("div");
+        container.className = `content-level-${level}`;
+        for (const [key, value] of Object.entries(obj)) {
+          if (key === "url" && typeof value === "string") {
+            const btn = document.createElement("button");
+            btn.textContent = `Gehe zu: ${value}`;
+            btn.onclick = async () => {
+              const path = value.split("/api/")[1];
+              if (path) {
+                const parts = path.split("/");
+                if (parts.length >= 2) {
+                  const cat = parts[0];
+                  const sub = parts[1];
+                  const data = await getFromDB(cat);
+                  if (data && data.data) {
+                    showSubMenu(cat);
+                    setTimeout(() => {
+                      showData(data.data[`/api/${cat}/${sub}`]);
+                    }, 100);
+                  }
+                }
+              }
+            };
+            container.appendChild(btn);
+          } else if (typeof value === "object") {
+            const sub = document.createElement("div");
+            sub.className = `content-level-${level}`;
+            const label = document.createElement("div");
+            label.textContent = key;
+            sub.appendChild(label);
+            renderJSON(value, sub, level + 1);
+            container.appendChild(sub);
+          } else {
+            const info = document.createElement("div");
+            info.className = "content-info";
+            info.textContent = `${key}: ${value}`;
+            container.appendChild(info);
+          }
+        }
+        parent.appendChild(container);
       } else {
-        displayCategories(currentData);
-        previousView = "main";
+        const info = document.createElement("div");
+        info.className = "content-info";
+        info.textContent = obj;
+        parent.appendChild(info);
       }
     }
 
-    async function loadFromCache() {
-      const cached = await getFromCache();
-      if (cached) {
+    async function init() {
+      await openDB();
+      const keys = await new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, "readonly");
+        const store = tx.objectStore(storeName);
+        const request = store.getAllKeys();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = e => reject(e);
+      });
+
+      if (keys.length > 0) {
+        progressEl.classList.add("hidden");
         statusEl.textContent = "Daten aus Cache geladen.";
-        progressEl.style.display = "none";
-        progressEl.value = progressEl.max;
-        outputEl.textContent = "";
-        outputEl.style.display = "none";
-        currentData = cached;
-        displayCategories(cached);
-        return true;
-      }
-      return false;
-    }
-
-    async function refreshData() {
-      const confirmed = confirm("Willst du die zwischengespeicherten Daten wirklich löschen und neu laden?");
-      if (confirmed) {
-        await clearCache();
-        location.reload();
+        loadMainMenu();
+      } else {
+        fetchAndStoreData();
       }
     }
 
-    openDB().then(async () => {
-      if (!(await loadFromCache())) {
-        await fetchAllData();
-      }
-    }).catch(err => {
-      statusEl.textContent = "Fehler beim Öffnen der Datenbank.";
-      console.error("IndexedDB-Fehler:", err);
-    });
+    init();
   </script>
 </body>
 </html>
