@@ -74,21 +74,21 @@
     let currentCategory = null;
 
     function openDB() {
-      return new Promise((resolve, reject) => {
-        const request = indexedDB.open(dbName, 1);
-        request.onupgradeneeded = e => {
-          db = e.target.result;
-          if (!db.objectStoreNames.contains(storeName)) {
-            db.createObjectStore(storeName);
-          }
-        };
-        request.onsuccess = e => {
-          db = e.target.result;
-          resolve(db);
-        };
-        request.onerror = e => reject(e);
-      });
-    }
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(dbName, 1);
+    request.onupgradeneeded = e => {
+      db = e.target.result;
+      if (!db.objectStoreNames.contains(storeName)) {
+        db.createObjectStore(storeName);
+      }
+    };
+    request.onsuccess = e => {
+      db = e.target.result;
+      resolve(db);
+    };
+    request.onerror = e => reject(e);
+  });
+}
 
     function saveToDB(key, value) {
       return new Promise((resolve, reject) => {
