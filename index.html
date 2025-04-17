@@ -33,170 +33,158 @@
   <p id="status">Initialisiere...</p>
   <progress id="progress" value="0" max="100"></progress>
   <pre id="output">Warte auf Start...</pre>
-  <div id="error" class="error"></div>
-  <pre id="error" style="color: red; white-space: pre-wrap; margin-top: 1em;"></pre>.
+  <div id="errors" class="error"></div>
   <button onclick="refreshData()">Daten neu laden</button>
 
   <script>
-  const baseUrl = "https://www.dnd5eapi.co";
-  const dbName = "dnd5e-db";
-  const statusEl = document.getElementById("status");
-  const progressEl = document.getElementById("progress");
-  const outputEl = document.getElementById("output");
-  const errorEl = document.getElementById("error");
+    const baseUrl = "https://www.dnd5eapi.co";
+    const dbName = "dnd5e-indexeddb";
+    const statusEl = document.getElementById("status");
+    const progressEl = document.getElementById("progress");
+    const outputEl = document.getElementById("output");
+    const errorEl = document.getElementById("errors");
 
-  function logError(msg, err) {
-    const text = `${msg}${err?.message ? " – " + err.message : ""}`;
-    console.error(text, err);
-    errorEl.textContent += text + "\n";
-  }
+    function logError(message, error) {
+      const fullMessage = `${message}: ${error.message || error}`;
+      console.error(fullMessage);
+      errorEl.textContent += fullMessage + '\n';
+    }
 
-  async function fetchJSON(url) {
-    try {
+    async function fetchJSON(url) {
       const res = await fetch(url);
-      if (!res.ok) throw new Error(`${url} returned ${res.status}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
-    } catch (err) {
-      logError(`Fehler beim Abrufen von ${url}`, err);
-      throw err;
     }
-  }
 
-  async function fetchEndpoints() {
-    try {
+    async function fetchEndpoints() {
       const api = await fetchJSON(`${baseUrl}/api`);
-      return Object.entries(api); // [ ["/api/spells", { name: "Spells" }], ... ]
-    } catch (err) {
-      logError("Fehler beim Abrufen der Endpunkte", err);
-      return [];
+      return Object.keys(api); // z.B. ["/api/spells", "/api/monsters"]
     }
-  }
 
-  async function openDB(stores) {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(dbName, 1);
-      request.onupgradeneeded = (event) => {
-        const db = event.target.result;
-        for (const store of stores) {
-          if (!db.objectStoreNames.contains(store)) {
-            db.createObjectStore(store, { keyPath: "url" });
-          }
-        }
-      };
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => {
-        logError("Fehler beim Öffnen der IndexedDB", request.error);
-        reject(request.error);
-      };
-    });
-  }
-
-  async function storeDetails(storeName, details) {
-    try {
-      const db = await openDB([storeName]);
+    function openDB(storeNames) {
       return new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, "readwrite");
-        const store = tx.objectStore(storeName);
-        for (const item of details) {
-          store.put(item);
-        }
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => {
-          logError(`Fehler beim Speichern in Store "${storeName}"`, tx.error);
-          reject(tx.error);
-        };
-      });
-    } catch (err) {
-      logError(`Konnte Datenbank für "${storeName}" nicht öffnen`, err);
-    }
-  }
+        const req = indexedDB.open(dbName, 1);
 
-  async function loadFromDB(endpoints) {
-    const db = await openDB(endpoints.map(e => e[0]));
-    let result = {};
-    for (const [endpoint] of endpoints) {
-      const tx = db.transaction(endpoint, "readonly");
-      const store = tx.objectStore(endpoint);
-      const req = store.getAll();
-      await new Promise(res => {
-        req.onsuccess = () => {
-          result[endpoint] = req.result.map(e => e.data);
-          res();
-        };
-        req.onerror = () => {
-          logError(`Fehler beim Lesen aus Store "${endpoint}"`, req.error);
-          res();
-        };
-      });
-    }
-    return result;
-  }
-
-  async function fetchAll() {
-    const endpoints = await fetchEndpoints();
-    if (!endpoints.length) {
-      logError("Keine Endpunkte gefunden – möglicherweise Netzwerkfehler?");
-      return;
-    }
-
-    progressEl.max = endpoints.length;
-    progressEl.value = 0;
-    let completed = 0;
-
-    for (const [endpointPath, meta] of endpoints) {
-      statusEl.textContent = `Lade Kategorie: ${endpointPath}`;
-
-      try {
-        const list = await fetchJSON(baseUrl + endpointPath);
-        if (!Array.isArray(list.results)) throw new Error("Ergebnis hat kein 'results'-Array");
-
-        const detailData = await Promise.all(
-          list.results.map(async item => {
-            try {
-              const detail = await fetchJSON(baseUrl + item.url);
-              return { url: item.url, data: detail };
-            } catch (err) {
-              logError(`Fehler bei Detailabruf ${item.url}`, err);
-              return null;
+        req.onupgradeneeded = (event) => {
+          const db = event.target.result;
+          for (const storeName of storeNames) {
+            if (!db.objectStoreNames.contains(storeName)) {
+              db.createObjectStore(storeName, { keyPath: "index" });
             }
-          })
-        );
+          }
+        };
 
-        const filtered = detailData.filter(e => e !== null);
-        await storeDetails(endpointPath, filtered);
-      } catch (err) {
-        logError(`Fehler bei Kategorie ${endpointPath}`, err);
-      }
-
-      completed++;
-      progressEl.value = completed;
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
     }
 
-    statusEl.textContent = "Fertig mit Laden.";
-    const data = await loadFromDB(endpoints);
-    outputEl.textContent = JSON.stringify(data, null, 2);
-  }
+    function storeDetails(storeName, data) {
+      return new Promise(async (resolve, reject) => {
+        try {
+          const db = await openDB([storeName]);
+          const tx = db.transaction(storeName, "readwrite");
+          const store = tx.objectStore(storeName);
+          for (const item of data) {
+            store.put(item);
+          }
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        } catch (err) {
+          reject(err);
+        }
+      });
+    }
 
-  async function refreshData() {
-    const ok = confirm("Datenbank wirklich löschen?");
-    if (!ok) return;
-    indexedDB.deleteDatabase(dbName);
-    location.reload();
-  }
+    async function loadFromDB(endpoints) {
+      const db = await openDB(endpoints.map(e => e.replace("/api/", "")));
+      const allData = {};
 
-  // Start
-  fetchEndpoints().then(endpoints => {
-    loadFromDB(endpoints).then(data => {
-      const hasData = Object.keys(data).some(k => data[k]?.length);
-      if (hasData) {
-        statusEl.textContent = "Daten aus IndexedDB geladen.";
-        outputEl.textContent = JSON.stringify(data, null, 2);
-        progressEl.value = progressEl.max;
-      } else {
-        fetchAll();
+      for (const path of endpoints) {
+        const storeName = path.replace("/api/", "");
+        const tx = db.transaction(storeName, "readonly");
+        const store = tx.objectStore(storeName);
+        const req = store.getAll();
+
+        const result = await new Promise((res, rej) => {
+          req.onsuccess = () => res(req.result);
+          req.onerror = () => rej(req.error);
+        });
+
+        allData[storeName] = result;
       }
-    });
-  });
-</script>
+
+      statusEl.textContent = "Daten aus IndexedDB geladen.";
+      progressEl.value = progressEl.max;
+      outputEl.textContent = JSON.stringify(allData, null, 2);
+      return true;
+    }
+
+    async function fetchAll() {
+      try {
+        const endpoints = await fetchEndpoints();
+        progressEl.max = endpoints.length;
+        progressEl.value = 0;
+
+        for (let i = 0; i < endpoints.length; i++) {
+          const endpointPath = endpoints[i];
+          const storeName = endpointPath.replace("/api/", "");
+          statusEl.textContent = `Lade ${storeName}...`;
+
+          try {
+            const list = await fetchJSON(baseUrl + endpointPath);
+
+            const items = list.results || [];
+            const detailed = [];
+
+            for (let j = 0; j < items.length; j++) {
+              const item = items[j];
+              statusEl.textContent = `Lade ${storeName} (${j + 1}/${items.length})`;
+              try {
+                const detail = await fetchJSON(baseUrl + item.url);
+                detailed.push(detail);
+              } catch (err) {
+                logError(`Fehler beim Laden von ${item.url}`, err);
+              }
+            }
+
+            await storeDetails(storeName, detailed);
+          } catch (err) {
+            logError(`Load failed: ${storeName}`, err);
+          }
+
+          progressEl.value = i + 1;
+        }
+
+        statusEl.textContent = "Fertig! Daten geladen.";
+        await loadFromDB(endpoints);
+      } catch (err) {
+        logError("Fehler beim Initialisieren", err);
+      }
+    }
+
+    function refreshData() {
+      const confirmed = confirm("Willst du die gespeicherten Daten wirklich löschen und neu laden?");
+      if (confirmed) {
+        const req = indexedDB.deleteDatabase(dbName);
+        req.onsuccess = () => location.reload();
+        req.onerror = () => logError("Fehler beim Löschen der Datenbank", req.error);
+      }
+    }
+
+    // Start
+    fetchEndpoints()
+      .then(async endpoints => {
+        try {
+          const success = await loadFromDB(endpoints);
+          if (!success) await fetchAll();
+        } catch {
+          await fetchAll();
+        }
+      })
+      .catch(err => {
+        logError("Fehler beim Abrufen der Endpunkte", err);
+      });
+  </script>
 </body>
 </html>
