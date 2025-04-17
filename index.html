@@ -3,14 +3,36 @@
 <head>
   <meta charset="UTF-8">
   <title>D&D API Tiefenanalyse</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 1em;
+    }
+    progress {
+      width: 100%;
+      height: 20px;
+    }
+    pre {
+      max-height: 60vh;
+      overflow-y: auto;
+      background: #f5f5f5;
+      padding: 1em;
+      border: 1px solid #ccc;
+    }
+  </style>
 </head>
 <body>
-  <h1>D&D 5e API: Alle Kategorien + Details</h1>
-  <pre id="output">Lade Daten...</pre>
+  <h1>D&D 5e API: Kategorien + Details</h1>
+  <p id="status">Initialisiere...</p>
+  <progress id="progress" value="0" max="100"></progress>
+  <pre id="output">Warte auf Start...</pre>
 
   <script>
     const baseUrl = "https://www.dnd5eapi.co";
     const results = new Map();
+    const statusEl = document.getElementById("status");
+    const progressEl = document.getElementById("progress");
+    const outputEl = document.getElementById("output");
 
     async function fetchJSON(url) {
       const res = await fetch(url);
@@ -20,23 +42,29 @@
     async function fetchEndpoints() {
       const response = await fetch(`${baseUrl}/api`);
       const json = await response.json();
-      return Object.values(json); // z. B. ['/spells', '/classes']
+      return Object.values(json);
     }
 
     async function fetchAllData() {
-      const output = document.getElementById("output");
-
       try {
         const endpoints = await fetchEndpoints();
+        const totalSteps = endpoints.length; // Kategorie-Ladevorgänge zählen
+        let currentStep = 0;
+
+        progressEl.max = totalSteps;
+        progressEl.value = 0;
 
         for (const endpoint of endpoints) {
           const categoryUrl = `${baseUrl}${endpoint}`;
+          statusEl.textContent = `Lade Kategorie: ${endpoint}`;
           const categoryData = await fetchJSON(categoryUrl);
 
           const detailedResults = new Map();
 
           if (Array.isArray(categoryData.results)) {
+            let subIndex = 0;
             for (const item of categoryData.results) {
+              statusEl.textContent = `Lade Detail (${++subIndex}/${categoryData.results.length}) aus ${endpoint}: ${item.name || item.index || item.url}`;
               try {
                 const detailData = await fetchJSON(`${baseUrl}${item.url}`);
                 detailedResults.set(item.url, detailData);
@@ -50,14 +78,16 @@
             count: categoryData.count || 0,
             results: Object.fromEntries(detailedResults)
           });
+
+          currentStep++;
+          progressEl.value = currentStep;
         }
 
-        // Darstellung
-        output.textContent = JSON.stringify(Object.fromEntries(results), null, 2);
-
-      } catch (error) {
-        output.textContent = "Fehler beim Laden der Daten.";
-        console.error(error);
+        statusEl.textContent = "Fertig!";
+        outputEl.textContent = JSON.stringify(Object.fromEntries(results), null, 2);
+      } catch (err) {
+        statusEl.textContent = "Fehler beim Laden der Daten.";
+        console.error(err);
       }
     }
 
