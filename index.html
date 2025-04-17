@@ -51,6 +51,7 @@
     const outputEl = document.getElementById("output");
     let db = null;
     let currentData = null;
+    let categoryNames = {}; // Speichert die Kategorienamen für die Anzeige
 
     function openDB() {
       return new Promise((resolve, reject) => {
@@ -115,7 +116,7 @@
     async function fetchEndpoints() {
       const response = await fetch(`${baseUrl}/api`);
       const json = await response.json();
-      return Object.values(json);
+      return Object.entries(json); // Gibt [KategorieName, URL] zurück
     }
 
     async function fetchAllData() {
@@ -127,9 +128,10 @@
       progressEl.max = totalSteps;
       progressEl.value = 0;
 
-      for (const endpoint of endpoints) {
+      for (const [categoryName, endpoint] of endpoints) {
         const categoryUrl = `${baseUrl}${endpoint}`;
-        statusEl.textContent = `Lade Kategorie: ${endpoint}`;
+        statusEl.textContent = `Lade Kategorie: ${categoryName}`;
+        categoryNames[categoryName] = categoryName; // Speichert den Kategorienamen
         const categoryData = await fetchJSON(categoryUrl);
 
         const detailedResults = new Map();
@@ -137,7 +139,7 @@
         if (Array.isArray(categoryData.results)) {
           let subIndex = 0;
           for (const item of categoryData.results) {
-            statusEl.textContent = `Lade Detail (${++subIndex}/${categoryData.results.length}) aus ${endpoint}: ${item.name || item.index || item.url}`;
+            statusEl.textContent = `Lade Detail (${++subIndex}/${categoryData.results.length}) aus ${categoryName}: ${item.name || item.index || item.url}`;
             try {
               const detailData = await fetchJSON(`${baseUrl}${item.url}`);
               detailedResults.set(item.url, detailData);
@@ -147,7 +149,7 @@
           }
         }
 
-        results.set(endpoint, {
+        results.set(categoryName, {
           count: categoryData.count || 0,
           results: Object.fromEntries(detailedResults)
         });
@@ -169,10 +171,10 @@
       const categoryList = document.getElementById("category-list");
       categoryList.innerHTML = "";
 
-      for (const [key, value] of Object.entries(data)) {
+      for (const categoryName of Object.keys(data)) {
         const button = document.createElement("button");
-        button.textContent = `${key} (${value.count})`;
-        button.onclick = () => showCategory(key);
+        button.textContent = categoryNames[categoryName] || categoryName; // Anzeigen des Kategorienamens
+        button.onclick = () => showCategory(categoryName);
         categoryList.appendChild(button);
       }
 
