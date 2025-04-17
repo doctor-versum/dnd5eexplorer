@@ -254,19 +254,19 @@
     }
 
     function navigateToURL(url) {
-  // Erzeuge wieder den vollen Key wie beim Speichern
-  const fixedUrl = url.replace(/^\/api\/(?:\d{4}\/)?/, "/api/");
+  // Entferne /api/2014/ oder /api/ am Anfang
+  const fixedUrl = url.replace(/^\/api\/(?:\d{4}\/)?/, "/");
 
   const parts = fixedUrl.split("/");
-  const idx = parts.indexOf("api");
-  const category = parts[idx + 1];
-  const fullKey = fixedUrl; // z.B. /api/skills/animal-handeling
+  const category = parts[1]; // Erster Teil nach dem Slash
+  const subPath = "/" + parts.slice(1).join("/"); // Rekonstruiere den vollständigen Pfad ab der Kategorie
 
-  if (currentData[category] && currentData[category].results[fullKey]) {
+  if (currentData[category] && currentData[category].results[subPath]) {
     showCategory(category);
-    showSubCategory(fullKey, currentData[category].results[fullKey]);
+    showSubCategory(subPath, currentData[category].results[subPath]);
   } else {
-    alert("Eintrag nicht im Cache gefunden: " + fullKey);
+    alert("Eintrag nicht im Cache gefunden: " + subPath);
+    console.log("Gesuchte Kategorie:", category);
     console.log("Verfügbare Keys:", Object.keys(currentData[category]?.results || {}));
   }
 }
