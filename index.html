@@ -34,6 +34,7 @@
   <progress id="progress" value="0" max="100"></progress>
   <pre id="output">Warte auf Start...</pre>
   <div id="error" class="error"></div>
+  <pre id="error" style="color: red; white-space: pre-wrap; margin-top: 1em;"></pre>.
   <button onclick="refreshData()">Daten neu laden</button>
 
   <script>
@@ -44,15 +45,31 @@
   const outputEl = document.getElementById("output");
   const errorEl = document.getElementById("error");
 
+  function logError(msg, err) {
+    const text = `${msg}${err?.message ? " – " + err.message : ""}`;
+    console.error(text, err);
+    errorEl.textContent += text + "\n";
+  }
+
   async function fetchJSON(url) {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`${url} returned ${res.status}`);
-    return res.json();
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${url} returned ${res.status}`);
+      return res.json();
+    } catch (err) {
+      logError(`Fehler beim Abrufen von ${url}`, err);
+      throw err;
+    }
   }
 
   async function fetchEndpoints() {
-    const api = await fetchJSON(`${baseUrl}/api`);
-    return Object.entries(api); // [ ["/api/spells", { name: "Spells" }], ... ]
+    try {
+      const api = await fetchJSON(`${baseUrl}/api`);
+      return Object.entries(api); // [ ["/api/spells", { name: "Spells" }], ... ]
+    } catch (err) {
+      logError("Fehler beim Abrufen der Endpunkte", err);
+      return [];
+    }
   }
 
   async function openDB(stores) {
@@ -67,19 +84,31 @@
         }
       };
       request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
+      request.onerror = () => {
+        logError("Fehler beim Öffnen der IndexedDB", request.error);
+        reject(request.error);
+      };
     });
   }
 
   async function storeDetails(storeName, details) {
-    const db = await openDB([storeName]);
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(storeName, "readwrite");
-      const store = tx.objectStore(storeName);
-      for (const item of details) store.put(item);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    try {
+      const db = await openDB([storeName]);
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, "readwrite");
+        const store = tx.objectStore(storeName);
+        for (const item of details) {
+          store.put(item);
+        }
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => {
+          logError(`Fehler beim Speichern in Store "${storeName}"`, tx.error);
+          reject(tx.error);
+        };
+      });
+    } catch (err) {
+      logError(`Konnte Datenbank für "${storeName}" nicht öffnen`, err);
+    }
   }
 
   async function loadFromDB(endpoints) {
@@ -94,7 +123,10 @@
           result[endpoint] = req.result.map(e => e.data);
           res();
         };
-        req.onerror = () => res(); // Fehler werden ignoriert
+        req.onerror = () => {
+          logError(`Fehler beim Lesen aus Store "${endpoint}"`, req.error);
+          res();
+        };
       });
     }
     return result;
@@ -102,6 +134,11 @@
 
   async function fetchAll() {
     const endpoints = await fetchEndpoints();
+    if (!endpoints.length) {
+      logError("Keine Endpunkte gefunden – möglicherweise Netzwerkfehler?");
+      return;
+    }
+
     progressEl.max = endpoints.length;
     progressEl.value = 0;
     let completed = 0;
@@ -111,7 +148,7 @@
 
       try {
         const list = await fetchJSON(baseUrl + endpointPath);
-        if (!Array.isArray(list.results)) continue;
+        if (!Array.isArray(list.results)) throw new Error("Ergebnis hat kein 'results'-Array");
 
         const detailData = await Promise.all(
           list.results.map(async item => {
@@ -119,7 +156,7 @@
               const detail = await fetchJSON(baseUrl + item.url);
               return { url: item.url, data: detail };
             } catch (err) {
-              errorEl.textContent += `Fehler bei ${item.url}: ${err.message}\n`;
+              logError(`Fehler bei Detailabruf ${item.url}`, err);
               return null;
             }
           })
@@ -128,7 +165,7 @@
         const filtered = detailData.filter(e => e !== null);
         await storeDetails(endpointPath, filtered);
       } catch (err) {
-        errorEl.textContent += `Fehler bei ${endpointPath}: ${err.message}\n`;
+        logError(`Fehler bei Kategorie ${endpointPath}`, err);
       }
 
       completed++;
@@ -150,7 +187,8 @@
   // Start
   fetchEndpoints().then(endpoints => {
     loadFromDB(endpoints).then(data => {
-      if (Object.keys(data).some(k => data[k]?.length)) {
+      const hasData = Object.keys(data).some(k => data[k]?.length);
+      if (hasData) {
         statusEl.textContent = "Daten aus IndexedDB geladen.";
         outputEl.textContent = JSON.stringify(data, null, 2);
         progressEl.value = progressEl.max;
