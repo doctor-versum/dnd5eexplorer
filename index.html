@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>D&D API Tiefenanalyse</title>
+</head>
+<body>
+  <h1>D&D 5e API: Alle Kategorien + Details</h1>
+  <pre id="output">Lade Daten...</pre>
+
+  <script>
+    const baseUrl = "https://www.dnd5eapi.co";
+    const results = new Map();
+
+    async function fetchJSON(url) {
+      const res = await fetch(url);
+      return res.json();
+    }
+
+    async function fetchEndpoints() {
+      const response = await fetch(`${baseUrl}/api`);
+      const json = await response.json();
+      return Object.values(json); // z. B. ['/spells', '/classes']
+    }
+
+    async function fetchAllData() {
+      const output = document.getElementById("output");
+
+      try {
+        const endpoints = await fetchEndpoints();
+
+        for (const endpoint of endpoints) {
+          const categoryUrl = `${baseUrl}${endpoint}`;
+          const categoryData = await fetchJSON(categoryUrl);
+
+          const detailedResults = new Map();
+
+          if (Array.isArray(categoryData.results)) {
+            for (const item of categoryData.results) {
+              try {
+                const detailData = await fetchJSON(`${baseUrl}${item.url}`);
+                detailedResults.set(item.url, detailData);
+              } catch (err) {
+                console.warn(`Fehler bei Detailabruf: ${item.url}`, err);
+              }
+            }
+          }
+
+          results.set(endpoint, {
+            count: categoryData.count || 0,
+            results: Object.fromEntries(detailedResults)
+          });
+        }
+
+        // Darstellung
+        output.textContent = JSON.stringify(Object.fromEntries(results), null, 2);
+
+      } catch (error) {
+        output.textContent = "Fehler beim Laden der Daten.";
+        console.error(error);
+      }
+    }
+
+    fetchAllData();
+  </script>
+</body>
+</html>
