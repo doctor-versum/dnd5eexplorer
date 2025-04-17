@@ -24,7 +24,7 @@
       padding: 0.5em 1em;
       font-size: 1em;
     }
-    #category-list button {
+    #category-list button, #sub-category-list button {
       display: block;
       width: 100%;
       text-align: left;
@@ -37,6 +37,7 @@
   <progress id="progress" value="0" max="100"></progress>
 
   <div id="category-list" style="display:none;"></div>
+  <div id="sub-category-list" style="display:none;"></div>
   <button id="back-button" style="display:none;" onclick="goBack()">Zurück</button>
 
   <pre id="output">Warte auf Start...</pre>
@@ -52,6 +53,7 @@
     let db = null;
     let currentData = null;
     let categoryNames = {}; // Speichert die Kategorienamen für die Anzeige
+    let currentCategory = null;
 
     function openDB() {
       return new Promise((resolve, reject) => {
@@ -181,21 +183,52 @@
       categoryList.style.display = "block";
     }
 
+    function displaySubCategories(categoryName, subCategories) {
+      const subCategoryList = document.getElementById("sub-category-list");
+      subCategoryList.innerHTML = "";
+
+      for (const [subCategoryName, subCategoryData] of Object.entries(subCategories)) {
+        const button = document.createElement("button");
+        button.textContent = subCategoryName; // Anzeigen des Unterkategorienamens
+        button.onclick = () => showSubCategory(subCategoryName, subCategoryData);
+        subCategoryList.appendChild(button);
+      }
+
+      subCategoryList.style.display = "block";
+    }
+
     function showCategory(categoryName) {
+      currentCategory = categoryName;
       const category = currentData[categoryName];
       if (!category) return;
 
       document.getElementById("category-list").style.display = "none";
       document.getElementById("back-button").style.display = "inline-block";
-      document.getElementById("output").textContent = JSON.stringify(category, null, 2);
+      outputEl.textContent = JSON.stringify(category, null, 2);
+
+      // Falls die Kategorie Unterkategorien enthält, zeigen wir diese an
+      const subCategories = category.results;
+      if (subCategories) {
+        displaySubCategories(categoryName, subCategories);
+      }
+
       statusEl.textContent = `Kategorie: ${categoryName}`;
     }
 
+    function showSubCategory(subCategoryName, subCategoryData) {
+      document.getElementById("sub-category-list").style.display = "none";
+      outputEl.textContent = JSON.stringify(subCategoryData, null, 2);
+      statusEl.textContent = `Unterkategorie: ${subCategoryName}`;
+    }
+
     function goBack() {
-      document.getElementById("category-list").style.display = "block";
-      document.getElementById("back-button").style.display = "none";
-      document.getElementById("output").textContent = "";
-      statusEl.textContent = "Wähle eine Kategorie aus:";
+      if (currentCategory) {
+        document.getElementById("category-list").style.display = "block";
+        document.getElementById("back-button").style.display = "none";
+        document.getElementById("sub-category-list").style.display = "none";
+        outputEl.textContent = "";
+        statusEl.textContent = "Wähle eine Kategorie aus:";
+      }
     }
 
     async function loadFromCache() {
