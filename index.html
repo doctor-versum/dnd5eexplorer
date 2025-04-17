@@ -254,18 +254,22 @@
     }
 
     function navigateToURL(url) {
-      const parts = url.split("/");
-      const idx = parts.indexOf("api");
-      const category = parts[idx + 2];
-      const subPath = "/" + parts.slice(idx + 2).join("/");
+  // Erzeuge wieder den vollen Key wie beim Speichern
+  const fixedUrl = url.replace(/^\/api\/(?:\d{4}\/)?/, "/api/");
 
-      if (currentData[category] && currentData[category].results[subPath]) {
-        showCategory(category);
-        showSubCategory(subPath, currentData[category].results[subPath]);
-      } else {
-        alert("Eintrag nicht im Cache gefunden: " + subPath);
-      }
-    }
+  const parts = fixedUrl.split("/");
+  const idx = parts.indexOf("api");
+  const category = parts[idx + 1];
+  const fullKey = fixedUrl; // z.B. /api/skills/animal-handeling
+
+  if (currentData[category] && currentData[category].results[fullKey]) {
+    showCategory(category);
+    showSubCategory(fullKey, currentData[category].results[fullKey]);
+  } else {
+    alert("Eintrag nicht im Cache gefunden: " + fullKey);
+    console.log("Verfügbare Keys:", Object.keys(currentData[category]?.results || {}));
+  }
+}
 
     function goBack() {
       displayCategories();
