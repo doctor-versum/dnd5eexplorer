@@ -223,7 +223,7 @@
         }
       } else if (typeof obj === "object" && obj !== null) {
         for (const [key, value] of Object.entries(obj)) {
-          if (key === "url" && typeof value === "string" && value.startsWith("/api/")) {
+          if (key === "url" && typeof value === "string" && value.startsWith("/api/2014/")) {
             const btn = document.createElement("button");
             btn.textContent = `Weiter zu ${value}`;
             btn.onclick = () => navigateToURL(value);
