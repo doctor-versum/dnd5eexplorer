@@ -37,163 +37,128 @@
   <button onclick="refreshData()">Daten neu laden</button>
 
   <script>
-    const baseUrl = "https://www.dnd5eapi.co";
-    const dbName = "dnd5e-db";
-    const dbVersion = 1;
-    const statusEl = document.getElementById("status");
-    const progressEl = document.getElementById("progress");
-    const outputEl = document.getElementById("output");
-    const errorEl = document.getElementById("error");
+  const baseUrl = "https://www.dnd5eapi.co";
+  const dbName = "dnd5e-db";
+  const statusEl = document.getElementById("status");
+  const progressEl = document.getElementById("progress");
+  const outputEl = document.getElementById("output");
+  const errorEl = document.getElementById("error");
 
-    function openDatabase(stores) {
-      return new Promise((resolve, reject) => {
-        const request = indexedDB.open(dbName, dbVersion);
-        request.onupgradeneeded = (event) => {
-          const db = event.target.result;
-          for (const storeName of stores) {
-            if (!db.objectStoreNames.contains(storeName)) {
-              db.createObjectStore(storeName, { keyPath: "url" });
-            }
+  async function fetchJSON(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`${url} returned ${res.status}`);
+    return res.json();
+  }
+
+  async function fetchEndpoints() {
+    const api = await fetchJSON(`${baseUrl}/api`);
+    return Object.entries(api); // [ ["/api/spells", { name: "Spells" }], ... ]
+  }
+
+  async function openDB(stores) {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(dbName, 1);
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        for (const store of stores) {
+          if (!db.objectStoreNames.contains(store)) {
+            db.createObjectStore(store, { keyPath: "url" });
           }
-        };
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-      });
-    }
-
-    async function fetchEndpoints() {
-      const response = await fetch(`${baseUrl}/api`);
-      const json = await response.json();
-      return Object.entries(json); // [ ["/api/spells", {name: "Spells"}], ... ]
-    }
-
-    function createWorkerScript() {
-      return `
-        self.onmessage = async function(e) {
-          const { baseUrl, endpoint } = e.data;
-          try {
-            const res = await fetch(baseUrl + endpoint);
-            const categoryData = await res.json();
-            const details = [];
-            if (Array.isArray(categoryData.results)) {
-              for (const item of categoryData.results) {
-                try {
-                  const detailRes = await fetch(baseUrl + item.url);
-                  const detail = await detailRes.json();
-                  details.push({ url: item.url, data: detail });
-                } catch (err) {
-                  self.postMessage({ type: 'error', message: 'Fehler bei ' + item.url + ': ' + err.message });
-                }
-              }
-            }
-            self.postMessage({ type: 'done', endpoint, details });
-          } catch (err) {
-            self.postMessage({ type: 'error', message: 'Fehler bei ' + endpoint + ': ' + err.message });
-          }
-        };
-      `;
-    }
-
-    async function storeInIndexedDB(storeName, data) {
-      const db = await openDatabase([storeName]);
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, "readwrite");
-        const store = tx.objectStore(storeName);
-        for (const item of data) {
-          store.put(item);
         }
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async function storeDetails(storeName, details) {
+    const db = await openDB([storeName]);
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(storeName, "readwrite");
+      const store = tx.objectStore(storeName);
+      for (const item of details) store.put(item);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function loadFromDB(endpoints) {
+    const db = await openDB(endpoints.map(e => e[0]));
+    let result = {};
+    for (const [endpoint] of endpoints) {
+      const tx = db.transaction(endpoint, "readonly");
+      const store = tx.objectStore(endpoint);
+      const req = store.getAll();
+      await new Promise(res => {
+        req.onsuccess = () => {
+          result[endpoint] = req.result.map(e => e.data);
+          res();
+        };
+        req.onerror = () => res(); // Fehler werden ignoriert
       });
     }
+    return result;
+  }
 
-    async function loadFromIndexedDB() {
-      const endpoints = await fetchEndpoints();
-      const db = await openDatabase(endpoints.map(([endpoint]) => endpoint));
-      let fullData = {};
-      return new Promise((resolve) => {
-        let loaded = 0;
-        for (const [endpoint] of endpoints) {
-          const tx = db.transaction(endpoint, "readonly");
-          const store = tx.objectStore(endpoint);
-          const req = store.getAll();
-          req.onsuccess = () => {
-            fullData[endpoint] = req.result.map(item => item.data);
-            loaded++;
-            if (loaded === endpoints.length) {
-              resolve(fullData);
+  async function fetchAll() {
+    const endpoints = await fetchEndpoints();
+    progressEl.max = endpoints.length;
+    progressEl.value = 0;
+    let completed = 0;
+
+    for (const [endpointPath, meta] of endpoints) {
+      statusEl.textContent = `Lade Kategorie: ${endpointPath}`;
+
+      try {
+        const list = await fetchJSON(baseUrl + endpointPath);
+        if (!Array.isArray(list.results)) continue;
+
+        const detailData = await Promise.all(
+          list.results.map(async item => {
+            try {
+              const detail = await fetchJSON(baseUrl + item.url);
+              return { url: item.url, data: detail };
+            } catch (err) {
+              errorEl.textContent += `Fehler bei ${item.url}: ${err.message}\n`;
+              return null;
             }
-          };
-          req.onerror = () => {
-            console.warn(`Lesefehler in ${endpoint}:`, req.error);
-            loaded++;
-            if (loaded === endpoints.length) {
-              resolve(fullData);
-            }
-          };
-        }
-      });
-    }
+          })
+        );
 
-    async function fetchAllData() {
-      const endpoints = await fetchEndpoints();
-      progressEl.max = endpoints.length;
-      progressEl.value = 0;
-      const blob = new Blob([createWorkerScript()], { type: "application/javascript" });
-      const workerURL = URL.createObjectURL(blob);
-      let finishedCount = 0;
-
-      for (const [endpoint] of endpoints) {
-        const worker = new Worker(workerURL);
-        worker.postMessage({ baseUrl, endpoint });
-
-        worker.onmessage = async (event) => {
-          const { type, message, endpoint, details } = event.data;
-          if (type === "done") {
-            await storeInIndexedDB(endpoint, details);
-            finishedCount++;
-            progressEl.value = finishedCount;
-            statusEl.textContent = `Fertig: ${endpoint}`;
-            if (finishedCount === endpoints.length) {
-              statusEl.textContent = "Alle Daten geladen!";
-              const finalData = await loadFromIndexedDB();
-              outputEl.textContent = JSON.stringify(finalData, null, 2);
-            }
-          } else if (type === "error") {
-            errorEl.textContent += "[Fehler] " + message + "\n";
-            console.error(message);
-          }
-        };
-
-        worker.onerror = function(err) {
-          const errMsg = `[Worker-Fehler] ${err.message}`;
-          errorEl.textContent += errMsg + "\n";
-          console.error(errMsg);
-        };
+        const filtered = detailData.filter(e => e !== null);
+        await storeDetails(endpointPath, filtered);
+      } catch (err) {
+        errorEl.textContent += `Fehler bei ${endpointPath}: ${err.message}\n`;
       }
+
+      completed++;
+      progressEl.value = completed;
     }
 
-    function refreshData() {
-      const confirmed = confirm("Alle gespeicherten Daten wirklich löschen?");
-      if (confirmed) {
-        const deleteReq = indexedDB.deleteDatabase(dbName);
-        deleteReq.onsuccess = () => location.reload();
-        deleteReq.onerror = () => {
-          errorEl.textContent = "Löschen der Datenbank fehlgeschlagen!";
-        };
-      }
-    }
+    statusEl.textContent = "Fertig mit Laden.";
+    const data = await loadFromDB(endpoints);
+    outputEl.textContent = JSON.stringify(data, null, 2);
+  }
 
-    // Start
-    loadFromIndexedDB().then(data => {
-      if (Object.keys(data).length > 0) {
+  async function refreshData() {
+    const ok = confirm("Datenbank wirklich löschen?");
+    if (!ok) return;
+    indexedDB.deleteDatabase(dbName);
+    location.reload();
+  }
+
+  // Start
+  fetchEndpoints().then(endpoints => {
+    loadFromDB(endpoints).then(data => {
+      if (Object.keys(data).some(k => data[k]?.length)) {
         statusEl.textContent = "Daten aus IndexedDB geladen.";
-        progressEl.value = progressEl.max;
         outputEl.textContent = JSON.stringify(data, null, 2);
+        progressEl.value = progressEl.max;
       } else {
-        fetchAllData();
+        fetchAll();
       }
     });
-  </script>
+  });
+</script>
 </body>
 </html>
