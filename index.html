@@ -232,7 +232,7 @@
   button.addEventListener("click", () => {
     navigateToURL(value);
   });
-  container.appendChild(button); // <-- nicht "content", sondern "container"
+  wrapper.appendChild(button); // <-- nicht "content", sondern "container"
 } else if (typeof value === "object" && value !== null) {
             const subWrapper = document.createElement("div");
             const label = document.createElement("div");
