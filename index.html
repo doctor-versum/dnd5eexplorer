@@ -223,7 +223,7 @@
         }
       } else if (typeof obj === "object" && obj !== null) {
         for (const [key, value] of Object.entries(obj)) {
-          if (key === "url" && typeof value === "string" && value.startsWith("/api/2014/")) {
+          if (key === "url" && typeof value === "string" && value.startsWith("/api/")) {
             const btn = document.createElement("button");
             btn.textContent = `Weiter zu ${value}`;
             btn.onclick = () => navigateToURL(value);
@@ -256,7 +256,7 @@
     function navigateToURL(url) {
       const parts = url.split("/");
       const idx = parts.indexOf("api");
-      const category = parts[idx + 1];
+      const category = parts[idx + 2];
       const subPath = "/" + parts.slice(idx + 1).join("/");
 
       if (currentData[category] && currentData[category].results[subPath]) {
