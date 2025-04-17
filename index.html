@@ -9,6 +9,9 @@
       padding: 0;
       height: 100%;
       font-family: sans-serif;
+    }
+
+    body {
       display: flex;
       flex-direction: column;
     }
@@ -21,6 +24,7 @@
       align-items: center;
       text-align: center;
       padding: 2em;
+      position: relative;
     }
 
     #loading-text {
@@ -60,23 +64,49 @@
       text-align: center;
       font-size: 0.9em;
       color: #888;
-      position: absolute;
+      position: fixed;
       bottom: 1em;
-      width: 100%;
+      left: 0;
+      right: 0;
     }
 
-    /* Versteckte Elemente (später sichtbar bei Bedarf) */
-    #category-list, #sub-category-list, #rendered-content, #separator, #back-button {
+    #main-content {
+      padding: 1em;
+      display: flex;
+      flex-direction: column;
+      gap: 1em;
+    }
+
+    #category-list,
+    #sub-category-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5em;
+    }
+
+    button {
+      padding: 0.5em 1em;
+      font-size: 1em;
+      cursor: pointer;
+    }
+
+    #back-button {
       display: none;
+      margin-bottom: 1em;
     }
 
-    .rendered-json {
+    #separator {
+      display: none;
+      margin: 1em 0;
+    }
+
+    #rendered-content {
+      display: none;
       max-height: 60vh;
       overflow-y: auto;
       background: #f5f5f5;
       padding: 1em;
       border: 1px solid #ccc;
-      margin-top: 1em;
     }
 
     .content-info {
@@ -109,12 +139,14 @@
     This process will only have to be finished once, until you specifically clear the cache.
   </div>
 
-  <div id="category-list"></div>
-  <div id="sub-category-list"></div>
-  <button id="back-button" onclick="goBack()">Zurück</button>
-  <hr id="separator">
-  <div id="rendered-content" class="rendered-json"></div>
-  <button onclick="refreshData()">Daten neu laden</button>
+  <div id="main-content" style="display: none;">
+    <div id="category-list"></div>
+    <div id="sub-category-list"></div>
+    <button id="back-button" onclick="goBack()">Zurück</button>
+    <hr id="separator">
+    <div id="rendered-content" class="rendered-json"></div>
+    <button onclick="refreshData()">Daten neu laden</button>
+  </div>
 
   <script>
     const baseUrl = "https://www.dnd5eapi.co";
@@ -215,12 +247,11 @@
 
       const data = Object.fromEntries(results);
       await saveToCache(data);
-      statusEl.textContent = "Daten geladen.";
-      progressEl.style.display = "none";
-      document.getElementById("loading-container").style.display = "none";
-      document.getElementById("loading-hint").style.display = "none";
       currentData = data;
       displayCategories();
+      document.getElementById("loading-container").style.display = "none";
+      document.getElementById("loading-hint").style.display = "none";
+      document.getElementById("main-content").style.display = "block";
     }
 
     function displayCategories() {
@@ -232,11 +263,11 @@
         btn.onclick = () => showCategory(category);
         container.appendChild(btn);
       }
-      container.style.display = "block";
+      container.style.display = "flex";
       document.getElementById("sub-category-list").style.display = "none";
       document.getElementById("rendered-content").style.display = "none";
       document.getElementById("separator").style.display = "none";
-      document.getElementById("back-button").style.display = "inline-block";
+      document.getElementById("back-button").style.display = "none";
     }
 
     function showCategory(category) {
@@ -253,9 +284,10 @@
       }
 
       document.getElementById("category-list").style.display = "none";
-      container.style.display = "block";
+      container.style.display = "flex";
       document.getElementById("rendered-content").style.display = "none";
       document.getElementById("separator").style.display = "none";
+      document.getElementById("back-button").style.display = "inline-block";
     }
 
     function showSubCategory(url, data) {
@@ -263,7 +295,6 @@
       const contentEl = document.getElementById("rendered-content");
       contentEl.innerHTML = "";
       renderJSON(data, contentEl, 1);
-
       contentEl.style.display = "block";
       document.getElementById("separator").style.display = "block";
     }
@@ -344,11 +375,10 @@
       const cached = await getFromCache();
       if (cached) {
         currentData = cached;
-        statusEl.textContent = "Daten aus Cache geladen.";
-        progressEl.style.display = "none";
+        displayCategories();
         document.getElementById("loading-container").style.display = "none";
         document.getElementById("loading-hint").style.display = "none";
-        displayCategories();
+        document.getElementById("main-content").style.display = "block";
       } else {
         await fetchAllData();
       }
