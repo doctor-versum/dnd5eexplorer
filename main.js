@@ -421,7 +421,7 @@ function debugLoading(percentage) {
 window.debugLoading = debugLoading; // Exportiere die Funktion für den Debugging-Zweck
 
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').then(() => {
+    navigator.serviceWorker.register('/dnd5eexplorer/sw.js').then(() => {
       console.log('Service Worker registriert!');
     });
   }
