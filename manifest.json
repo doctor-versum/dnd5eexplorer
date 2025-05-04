@@ -1,7 +1,7 @@
 {
     "name": "D&D 5e explorer",
     "short_name": "D&D 5e",
-    "start_url": "/dnd5eapi/",
+    "start_url": "/dnd5eexplorer/",
     "display": "standalone",
     "background_color": "#12001a",
     "theme_color": "#FF4080",
