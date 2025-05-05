@@ -128,9 +128,11 @@ body {
 }
 
 button {
-    padding: 0.5em 1em;
+    padding: 1em;
+    margin-bottom: 2%;
     font-size: 1em;
     cursor: pointer;
+    justify-content: center;
 }
 
 #back-button {
