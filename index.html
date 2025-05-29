@@ -1,38 +1,42 @@
 <!DOCTYPE html>
 <html lang="de">
-<head>
-  <meta charset="UTF-8">
-  <title>D&D 5e Explorer</title>
-  <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css">
-  <script type="module" src="main.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
-  <script>eruda.init();</script>
-</head>
-<body>
-  <div id="loading-container">
-    <div id="progress-container" style="display: none;">
-      <div id="progress-bar">
+  <head>
+    <meta charset="UTF-8" />
+    <title>D&D 5e Explorer</title>
+    <link rel="manifest" href="manifest.json" />
+    <link rel="stylesheet" href="style.css" />
+    <script type="module" src="main.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+    <script>
+      eruda.init();
+    </script>
+  </head>
+  <body>
+    <div id="loading-container">
+      <div id="progress-container" style="display: none">
+        <div id="progress-bar"></div>
+      </div>
+      <div id="loading-text-container">
+        <div id="loading-text">Loading</div>
+        <div id="status">preparing...</div>
       </div>
     </div>
-    <div id="loading-text-container">
-      <div id="loading-text">Loading</div>
-      <div id="status">preparing...</div>
+
+    <div id="main-content" style="display: none">
+      <div id="category-list"></div>
+      <div id="sub-category-list"></div>
+
+      <hr id="separator" />
+
+      <div id="rendered-content" class="rendered-json"></div>
+
+      <button id="back-button">Zurück</button>
+      <button id="download-data">Daten neu laden</button>
+      <button id="delete-data">Lösche Daten</button>
+      <button id="installButton" style="display: none">
+        Installiere lokal
+      </button>
     </div>
-  </div>
-
-  <div id="main-content" style="display: none;">
-    <div id="category-list"></div>
-    <div id="sub-category-list"></div>
-
-    <hr id="separator">
-
-    <div id="rendered-content" class="rendered-json"></div>
-
-    <button id="back-button">Zurück</button>
-    <button id="download-data">Daten neu laden</button>
-    <button id="delete-data">Lösche Daten</button>
-    <button id="installButton" style="display:none;">Installiere lokal</button>
-  </div>
-</body>
+  </body>
 </html>
