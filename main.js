@@ -174,7 +174,6 @@ function displayCategories() {
   container.style.display = 'flex';
   document.getElementById('sub-category-list').style.display = 'none';
   document.getElementById('rendered-content').style.display = 'none';
-  document.getElementById('separator').style.display = 'none';
   document.getElementById('back-button').style.display = 'none';
   // "Lösche Daten"-Button nur im Caching-Modus anzeigen
   document.getElementById('delete-data').style.display = liveMode
@@ -251,7 +250,6 @@ async function showSubCategory(url, data) {
       contentEl.innerHTML = '';
       renderJSON(detailData, contentEl, 1);
       contentEl.style.display = 'block';
-      document.getElementById('separator').style.display = 'block';
     } catch (err) {
       console.error('Fehler beim Laden der Detaildaten:', err);
       statusEl.textContent = 'Fehler beim Abrufen der Detaildaten.';
@@ -263,7 +261,6 @@ async function showSubCategory(url, data) {
     contentEl.innerHTML = '';
     renderJSON(data, contentEl, 1);
     contentEl.style.display = 'block';
-    document.getElementById('separator').style.display = 'block';
   }
 }
 
