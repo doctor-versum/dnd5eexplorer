@@ -240,3 +240,74 @@ button {
 #installButton:hover {
   box-shadow: var(--accent-color) 0px 0px 10px;
 }
+
+/* --- Flex Layout für den Hauptbereich --- */
+#main-content {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 0;
+  gap: 0;
+}
+
+/* Bereich für Kategorien + Unterkategorien */
+#lists-container {
+  display: flex;
+  flex-direction: column;
+  padding: 1em;
+  gap: 0.5em;
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Content rechts / unten */
+#rendered-content {
+  display: none; /* JS steuert das Ein-/Ausblenden */
+  flex: 1;
+  overflow-y: auto;
+  padding: 1em;
+}
+
+/* Querformat: Info rechts */
+@media (orientation: landscape) {
+  #main-content {
+    flex-direction: row;
+  }
+
+  #lists-container {
+    width: 50%;
+    height: 100%;
+    border-right: 2px solid var(--dark-accent-color);
+  }
+
+  #rendered-content {
+    width: 50%;
+    height: 100%;
+  }
+}
+
+/* Hochformat: Info unten */
+@media (orientation: portrait) {
+  #main-content {
+    flex-direction: column;
+  }
+
+  #lists-container {
+    width: 100%;
+    height: 50%;
+    border-bottom: 2px solid var(--dark-accent-color);
+  }
+
+  #rendered-content {
+    width: 100%;
+    height: 50%;
+  }
+}
+
+/* Buttons wieder wie gewohnt untereinander */
+#back-button,
+#download-data,
+#delete-data,
+#installButton {
+  margin: .5em;
+}
